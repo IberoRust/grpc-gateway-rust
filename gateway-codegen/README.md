@@ -57,4 +57,4 @@ protoc \
 If you are using `tonic-build` (or `tonic-prost-build`) in a `build.rs` script, you generally don't need to run `protoc` manually. However, you need to configure the build script
 to use this plugin.
 
-See the [main README](https://github.com/RustLangLatam/grpc-gateway-rust/README.md#getting-started) for detailed instructions on `build.rs` integration.
+See the [main README](https://github.com/IberoRust/grpc-gateway-rust/tree/main#getting-started) for detailed instructions on `build.rs` integration.
