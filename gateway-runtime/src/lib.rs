@@ -24,7 +24,7 @@
 //! -   **Type Safety**: It leverages Rust's type system to ensure correct mapping between HTTP and gRPC types.
 //! -   **Extensibility**: The `Codec` and `Router` abstractions allow for plugging in different serialization formats and routing strategies.
 
-#![doc(html_root_url = "https://docs.rs/grpc-gateway-rust/0.1.0")]
+#![doc(html_root_url = "https://docs.rs/grpc-gateway-rust/0.1.1")]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![doc = include_str!("../../README.md")]
 

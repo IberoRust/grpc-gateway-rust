@@ -123,7 +123,7 @@ async fn test_multipart_upload_and_download() {
 
         let client = StoredFileServiceClient::new(channel);
         let mut router = Router::<SyncService<BoxedGatewayService>>::new();
-        let codec = JsonCodec;
+        let codec = JsonCodec::new();
 
         StoredFileServiceRegistration::register_stored_file_service(&mut router, client, codec);
 
