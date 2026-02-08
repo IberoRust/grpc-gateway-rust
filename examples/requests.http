@@ -1,0 +1,201 @@
+@host = http://localhost:8080
+
+### Create (Complex Path Params)
+POST {{host}}/v1/example/a_bit_of_everything/1.1/2.2/3/separator/4/5/6/7/true/strprefix/val/8/9/10/11/12/ncname/ZERO/PATH_ENUM_DEF/NESTED_PATH_ENUM_DEF/ZERO
+Content-Type: application/json
+
+{
+  "uuid": "uuid-create",
+  "string_value": "strprefix/val",
+  "bool_value": true
+}
+
+### CreateBody
+POST {{host}}/v1/example/a_bit_of_everything
+Content-Type: application/json
+
+{
+  "uuid": "uuid-create-body",
+  "bool_value": true,
+  "nested": [
+    {
+      "name": "nested_item",
+      "amount": 10
+    }
+  ]
+}
+
+### CreateBook
+POST {{host}}/v1/publishers/123/books
+Content-Type: application/json
+
+{
+  "name": "publishers/123/books/456",
+  "id": "456"
+}
+
+### UpdateBook
+PATCH {{host}}/v1/publishers/123/books/456
+Content-Type: application/json
+
+{
+  "name": "publishers/123/books/456",
+  "id": "456"
+}
+
+### Lookup
+GET {{host}}/v1/example/a_bit_of_everything/uuid-lookup
+
+### Custom
+POST {{host}}/v1/example/a_bit_of_everything/uuid-custom:custom
+Content-Type: application/json
+
+{}
+
+### DoubleColon
+POST {{host}}/v1/example/a_bit_of_everything/uuid-double:custom:custom
+Content-Type: application/json
+
+{}
+
+### Update
+PUT {{host}}/v1/example/a_bit_of_everything/uuid-update
+Content-Type: application/json
+
+{
+  "bool_value": false
+}
+
+### UpdateV2
+PUT {{host}}/v2/example/a_bit_of_everything/uuid-update-v2
+Content-Type: application/json
+
+{
+  "abe": {
+    "uuid": "uuid-update-v2",
+    "bool_value": true
+  },
+  "update_mask": {
+    "paths": [
+      "bool_value"
+    ]
+  }
+}
+
+### Delete
+DELETE {{host}}/v1/example/a_bit_of_everything/uuid-delete
+
+### GetQuery
+GET {{host}}/v1/example/a_bit_of_everything/query/uuid-query
+
+### GetRepeatedQuery
+GET {{host}}/v1/example/a_bit_of_everything_repeated/1.1/2.2/3/4/5/6/7/true/foo/BASE64/8/ZERO/9/10/11/12
+
+### Echo (GET)
+GET {{host}}/v1/example/a_bit_of_everything/echo/hello-world
+
+### Echo (POST binding)
+POST {{host}}/v2/example/echo
+Content-Type: application/json
+
+"hello-world-post"
+
+### DeepPathEcho
+POST {{host}}/v1/example/deep_path/nested-name
+Content-Type: application/json
+
+{
+  "single_nested": {
+    "name": "nested-name"
+  }
+}
+
+### Timeout
+GET {{host}}/v2/example/timeout
+Grpc-Timeout: 100m
+
+### ErrorWithDetails
+GET {{host}}/v2/example/errorwithdetails
+
+### GetMessageWithBody
+POST {{host}}/v2/example/withbody/id-body
+Content-Type: application/json
+
+{
+  "name": "body-content"
+}
+
+### PostWithEmptyBody
+POST {{host}}/v2/example/postwithemptybody/name-empty
+Content-Type: application/json
+
+{}
+
+### CheckGetQueryParams
+GET {{host}}/v1/example/a_bit_of_everything/params/get/nested-name?bool_value=true&string_value=query
+
+### CheckNestedEnumGetQueryParams
+GET {{host}}/v1/example/a_bit_of_everything/params/get/nested_enum/TRUE?bool_value=false
+
+### CheckPostQueryParams
+POST {{host}}/v1/example/a_bit_of_everything/params/post/some-string?bool_value=true
+Content-Type: application/json
+
+{
+  "name": "nested-in-body",
+  "amount": 50
+}
+
+### OverwriteRequestContentType
+POST {{host}}/v2/example/overwriterequestcontenttype
+Content-Type: application/x-bar-mime
+
+{
+  "name": "custom-mime"
+}
+
+### OverwriteResponseContentType
+GET {{host}}/v2/example/overwriteresponsecontenttype
+
+### CheckExternalPathEnum
+GET {{host}}/v2/PATH_ENUM_DEF:check
+
+### CheckExternalNestedPathEnum
+GET {{host}}/v3/NESTED_PATH_ENUM_DEF:check
+
+### CheckStatus
+GET {{host}}/v1/example/checkStatus
+
+### Exists (HEAD)
+HEAD {{host}}/v1/example/a_bit_of_everything/uuid-head
+
+### CustomOptionsRequest
+OPTIONS {{host}}/v1/example/a_bit_of_everything/uuid-options
+
+### TraceRequest
+TRACE {{host}}/v1/example/a_bit_of_everything/uuid-trace
+
+### PostOneofEnum
+POST {{host}}/v1/example/oneofenum
+Content-Type: application/json
+
+"ONE"
+
+### PostRequiredMessageType
+POST {{host}}/v1/example/requiredmessagetype
+Content-Type: application/json
+
+{
+  "id": "req-id",
+  "foo": {
+    "bar": {
+      "id": "bar-id"
+    }
+  }
+}
+
+### camelCaseServiceName.Empty
+GET {{host}}/v2/example/empty
+
+### SnakeEnumService.SnakeEnum
+GET {{host}}/v1/example/snake/value_e/value_c/value_import

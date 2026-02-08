@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = [
+    "gateway-runtime",
+    "gateway-codegen",
+    "gateway-annotations",
+    "gateway-internal",
+    "examples"
+]
+default-members = [
+    "gateway-runtime",
+    "gateway-codegen",
+    "gateway-annotations",
+    "gateway-internal",
+]

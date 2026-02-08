@@ -1,0 +1,46 @@
+[package]
+name = "gateway-examples"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gateway-runtime = { path = "../gateway-runtime" }
+tonic = "0.14"
+prost = "0.14"
+tokio = { version = "1.49", features = ["full"] }
+http = "1.4"
+hyper = { version = "1.8", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+http-body-util = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+tonic-prost = "0.14"
+gateway-internal = { version = "0.1.0", path = "../gateway-internal" }
+tokio-stream = "0.1"
+actix-web = "4.5"
+bytes = "1.11"
+tower = "0.5"
+
+[build-dependencies]
+tonic-prost-build = "0.14"
+protoc-bin-vendored = "3.2.0"
+
+[dev-dependencies]
+reqwest = { version = "0.13", features = ["multipart", "stream", "json"] }
+
+[[bin]]
+name = "example-aboe-gateway"
+path = "src/a_bit_of_everything/gateway.rs"
+
+[[bin]]
+name = "example-aboe-grpc"
+path = "src/a_bit_of_everything/grpc.rs"
+
+[[bin]]
+name = "example-load-balanced"
+path = "src/load_balancing/gateway.rs"
+
+[[bin]]
+name = "example-actix"
+path = "src/actix_integration/gateway.rs"
