@@ -53,15 +53,23 @@ fn main() -> io::Result<()> {
                 });
             }
 
-            let output_name = proto_file
-                .name
-                .clone()
-                .unwrap_or_default()
-                .replace(".proto", ".rs");
+            let output_name = if let Some(package) = &proto_file.package {
+                format!("{}.gw.rs", package)
+            } else {
+                proto_file
+                    .name
+                    .clone()
+                    .unwrap_or_default()
+                    .replace(".proto", ".gw.rs")
+            };
 
-            let mod_name_str = output_name
-                .replace(".rs", "")
-                .replace(|c: char| !c.is_ascii_alphanumeric() && c != '_', "_");
+            let mod_name_str = if let Some(package) = &proto_file.package {
+                package.replace('.', "_")
+            } else {
+                output_name
+                    .replace(".gw.rs", "")
+                    .replace(|c: char| !c.is_ascii_alphanumeric() && c != '_', "_")
+            };
 
             let mod_name = Ident::new(&mod_name_str, Span::call_site());
 

@@ -32,7 +32,8 @@ This command will:
 
 1. Read `service.proto`.
 2. Invoke `protoc-gen-grpc-gateway`.
-3. Output the generated Rust code into the `./generated` directory.
+3. Output the generated Rust code into the `./generated` directory. The output file will be named `{package}.gw.rs` (e.g., `example.service.v1.gw.rs` if the package is
+   `example.service.v1`). If no package is defined, it defaults to `{filename}.gw.rs`.
 
 ### Advanced Options
 
@@ -57,4 +58,4 @@ protoc \
 If you are using `tonic-build` (or `tonic-prost-build`) in a `build.rs` script, you generally don't need to run `protoc` manually. However, you need to configure the build script
 to use this plugin.
 
-See the [main README](https://github.com/IberoRust/grpc-gateway-rust/tree/main#getting-started) for detailed instructions on `build.rs` integration.
+See the [main README](../README.md#getting-started) for detailed instructions on `build.rs` integration.

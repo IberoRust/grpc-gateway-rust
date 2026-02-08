@@ -62,14 +62,19 @@ async fn gateway_handler(
                 };
 
                 // Convert http 1.0 status to actix (http 0.2) status
-                let status_code = actix_web::http::StatusCode::from_u16(parts.status.as_u16()).unwrap();
+                let status_code =
+                    actix_web::http::StatusCode::from_u16(parts.status.as_u16()).unwrap();
                 let mut builder = HttpResponse::build(status_code);
 
                 // Copy headers back
                 for (k, v) in parts.headers {
                     if let Some(key) = k {
-                        if let Ok(actix_key) = actix_web::http::header::HeaderName::from_bytes(key.as_str().as_bytes()) {
-                            if let Ok(actix_val) = actix_web::http::header::HeaderValue::from_bytes(v.as_bytes()) {
+                        if let Ok(actix_key) =
+                            actix_web::http::header::HeaderName::from_bytes(key.as_str().as_bytes())
+                        {
+                            if let Ok(actix_val) =
+                                actix_web::http::header::HeaderValue::from_bytes(v.as_bytes())
+                            {
                                 builder.insert_header((actix_key, actix_val));
                             }
                         }
@@ -103,7 +108,7 @@ async fn main() -> std::io::Result<()> {
 
     // 2. Setup Router
     let mut router = Router::<SyncService<BoxedGatewayService>>::new();
-    let codec = JsonCodec;
+    let codec = JsonCodec::new();
 
     ABitOfEverythingServiceRegistration::register_a_bit_of_everything_service(
         &mut router,
@@ -122,7 +127,7 @@ async fn main() -> std::io::Result<()> {
             .route("/", web::get().to(index))
             .default_service(web::to(gateway_handler))
     })
-        .bind(("127.0.0.1", 8082))?
-        .run()
-        .await
+    .bind(("127.0.0.1", 8082))?
+    .run()
+    .await
 }

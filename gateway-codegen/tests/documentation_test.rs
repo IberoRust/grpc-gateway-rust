@@ -167,7 +167,8 @@ fn test_missing_documentation_fallback() {
     let output = tokens.to_string();
 
     // Method footer should be present
-    let expected_method_footer = "This endpoint is generated from TestService.Echo defined in test.proto.";
+    let expected_method_footer =
+        "This endpoint is generated from TestService.Echo defined in test.proto.";
     assert!(output.contains(expected_method_footer));
 }
 

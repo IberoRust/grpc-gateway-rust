@@ -106,15 +106,12 @@ impl<S> Default for Router<S> {
 /// # Type Parameters
 /// *   `S`: The service type stored in the router.
 /// *   `C`: The type of the service being registered. It must be convertible into `S`.
-pub fn route<S, C>(
-    router: &mut Router<S>,
-    method: Method,
-    pattern: Pattern,
-    service: C,
-) where
+pub fn route<S, C>(router: &mut Router<S>, method: Method, pattern: Pattern, service: C)
+where
     C: Into<S>,
 {
-    router.routes
+    router
+        .routes
         .entry(method.to_string())
         .or_default()
         .push(RouteEntry {

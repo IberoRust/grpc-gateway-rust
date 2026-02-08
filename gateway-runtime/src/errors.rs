@@ -73,7 +73,9 @@ pub enum GatewayError {
 impl core::fmt::Display for GatewayError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            GatewayError::Encoding(e) => write!(f, "failed to serialize/deserialize message: {}", e),
+            GatewayError::Encoding(e) => {
+                write!(f, "failed to serialize/deserialize message: {}", e)
+            }
             GatewayError::Upstream(s) => write!(f, "upstream gRPC error: {}", s),
             GatewayError::Http(e) => write!(f, "HTTP protocol error: {}", e),
             GatewayError::MethodNotAllowed => write!(f, "Method not allowed"),
@@ -134,9 +136,8 @@ pub fn handle_error(status: tonic::Status) -> Response<BoxBody> {
     });
 
     let body_bytes = serde_json::to_vec(&body).unwrap_or_default();
-    let full_body = BodyExt::boxed_unsync(
-        Full::new(Bytes::from(body_bytes)).map_err(|never| match never {}),
-    );
+    let full_body =
+        BodyExt::boxed_unsync(Full::new(Bytes::from(body_bytes)).map_err(|never| match never {}));
 
     Response::builder()
         .status(http_code)

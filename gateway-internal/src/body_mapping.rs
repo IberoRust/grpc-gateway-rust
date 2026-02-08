@@ -25,14 +25,14 @@ mod tests {
         assert!(BodyMapping {
             field_path: Some("*".to_string())
         }
-            .is_whole_message());
+        .is_whole_message());
         assert!(BodyMapping {
             field_path: Some("".to_string())
         }
-            .is_whole_message());
+        .is_whole_message());
         assert!(!BodyMapping {
             field_path: Some("data".to_string())
         }
-            .is_whole_message());
+        .is_whole_message());
     }
 }

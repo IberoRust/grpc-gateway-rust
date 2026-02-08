@@ -25,7 +25,6 @@ use heck::{ToPascalCase, ToSnakeCase};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote};
 
-
 /// Resolves a dot-separated protobuf type name to a Rust path token stream.
 fn resolve_type(type_name: &str) -> TokenStream {
     let s = type_name.trim_start_matches('.').replace('.', "::");
@@ -139,12 +138,18 @@ pub fn generate_service(service: &ServiceDefinition) -> TokenStream {
 
         let forward_call = if method.server_streaming {
             quote! {
-                gateway_runtime::forward::forward_response_stream(codec, resp.into_inner()).await
+                gateway_runtime::forward::forward_response_stream(codec, resp.into_inner(), req).await
             }
         } else {
             quote! {
-                gateway_runtime::forward::forward_response_message(codec, &resp.into_inner())
+                gateway_runtime::forward::forward_response_message(codec, &resp.into_inner(), req)
             }
+        };
+
+        let resp_type_annotation = if method.server_streaming {
+            quote! { ::gateway_runtime::tonic::Response<::gateway_runtime::tonic::Streaming<_>> }
+        } else {
+            quote! { ::gateway_runtime::tonic::Response<_> }
         };
 
         quote! {
@@ -171,7 +176,7 @@ pub fn generate_service(service: &ServiceDefinition) -> TokenStream {
                     }
                 }
 
-                let resp = match client.#method_name(tonic_req).await {
+                let resp: #resp_type_annotation = match client.#method_name(tonic_req).await {
                     Ok(r) => r,
                     Err(e) => return Err(::gateway_runtime::errors::GatewayError::Upstream(e)),
                 };
@@ -205,8 +210,16 @@ pub fn generate_service(service: &ServiceDefinition) -> TokenStream {
                 quote! { gateway_internal::path_template::Op { code: #code_ident, operand: #operand } }
             }).collect();
 
-            let pool_tokens: Vec<TokenStream> = pattern.pool.iter().map(|s| quote! { #s.to_string() }).collect();
-            let vars_tokens: Vec<TokenStream> = pattern.vars.iter().map(|s| quote! { #s.to_string() }).collect();
+            let pool_tokens: Vec<TokenStream> = pattern
+                .pool
+                .iter()
+                .map(|s| quote! { #s.to_string() })
+                .collect();
+            let vars_tokens: Vec<TokenStream> = pattern
+                .vars
+                .iter()
+                .map(|s| quote! { #s.to_string() })
+                .collect();
             let stack_size = pattern.stack_size;
             let tail_len = pattern.tail_len;
             let verb_token = match &pattern.verb {
@@ -214,20 +227,32 @@ pub fn generate_service(service: &ServiceDefinition) -> TokenStream {
                 None => quote! { None },
             };
 
-            let population_logic: Vec<TokenStream> = binding.path_params.iter().map(|param| {
-                let field_path = &param.field_path;
-                let is_repeated = param.is_repeated;
-                let field_type = param.field_type;
-                let setter = generate_setter(field_path, is_repeated, field_type);
-                quote! {
-                    if let Some(val) = params.get(#field_path) {
-                        #setter
+            let population_logic: Vec<TokenStream> = binding
+                .path_params
+                .iter()
+                .map(|param| {
+                    let field_path = &param.field_path;
+                    let is_repeated = param.is_repeated;
+                    let field_type = param.field_type;
+                    let setter = generate_setter(field_path, is_repeated, field_type);
+                    quote! {
+                        if let Some(val) = params.get(#field_path) {
+                            #setter
+                        }
                     }
-                }
-            }).collect();
+                })
+                .collect();
 
-            let params_ident = if binding.path_params.is_empty() { quote! { _params } } else { quote! { params } };
-            let mut_token = if binding.path_params.is_empty() { quote! {} } else { quote! { mut } };
+            let params_ident = if binding.path_params.is_empty() {
+                quote! { _params }
+            } else {
+                quote! { params }
+            };
+            let mut_token = if binding.path_params.is_empty() {
+                quote! {}
+            } else {
+                quote! { mut }
+            };
 
             let unmarshal_logic = if let Some(body) = &binding.body {
                 if body.is_whole_message() {
@@ -291,7 +316,10 @@ pub fn generate_service(service: &ServiceDefinition) -> TokenStream {
         }
     }
 
-    let register_doc = format!("Registers the `{}` service with the `Router`.", service.name);
+    let register_doc = format!(
+        "Registers the `{}` service with the `Router`.",
+        service.name
+    );
     let register_doc_details = "This function routes HTTP requests matching the service's defined paths to the provided gRPC client, using the given codec for serialization.".to_string();
 
     quote! {

@@ -408,7 +408,11 @@ impl StoredFileService for MyStoredFileService {
         request: Request<CreateFileRequest>,
     ) -> Result<Response<StoredFile>, Status> {
         let inner = request.into_inner();
-        println!("gRPC Request (CreateStoredFile): filename={}, content_len={}", inner.filename, inner.content.len());
+        println!(
+            "gRPC Request (CreateStoredFile): filename={}, content_len={}",
+            inner.filename,
+            inner.content.len()
+        );
 
         // Emulate creating a stored file
         Ok(Response::new(StoredFile {

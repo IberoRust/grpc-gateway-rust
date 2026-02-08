@@ -6,8 +6,8 @@ pub mod google {
         include!(concat!(env!("OUT_DIR"), "/google.protobuf_custom.rs"));
         pub mod compiler {
             include!(concat!(
-            env!("OUT_DIR"),
-            "/google.protobuf_custom.compiler.rs"
+                env!("OUT_DIR"),
+                "/google.protobuf_custom.compiler.rs"
             ));
         }
     }

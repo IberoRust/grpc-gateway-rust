@@ -1,6 +1,6 @@
 # gRPC Gateway for Rust
 
-[![Rust](https://img.shields.io/badge/Rust-1.75+-orange.svg?style=flat&logo=rust)](https://www.rust-lang.org)
+[![Rust](https://img.shields.io/badge/Rust-1.80+-orange.svg?style=flat&logo=rust)](https://www.rust-lang.org)
 [![gRPC](https://img.shields.io/badge/gRPC-tonic_0.14-blue.svg?style=flat&logo=grpc)](https://github.com/hyperium/tonic)
 [![Protobuf](https://img.shields.io/badge/Protobuf-prost_0.14-green.svg?style=flat&logo=protocol-buffers)](https://github.com/tokio-rs/prost)
 [![Tower](https://img.shields.io/badge/Tower-0.5-orange.svg?style=flat)](https://github.com/tower-rs/tower)
@@ -8,15 +8,14 @@
 [![Hyper](https://img.shields.io/badge/Hyper-1.8+-blue.svg?style=flat)](https://hyper.rs)
 [![Actix](https://img.shields.io/badge/Actix-4.12+-green.svg?style=flat)](https://actix.rs)
 [![Serde](https://img.shields.io/badge/Serde-1.0-red.svg?style=flat)](https://serde.rs)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
 
 > **⚠️ WARNING: Work In Progress ⚠️**
 >
 > This project is currently under **active development**. It is an early version intended for **testing and experimentation purposes only**.
 > It has **NOT** been verified in production environments. Breaking changes may occur at any time.
 
-A high-performance, `protoc` plugin that generates a reverse proxy server to translate a RESTful HTTP API into gRPC. This project allows you to expose your gRPC services as
-HTTP/JSON endpoints defined by `google.api.http` annotations, maintaining a single source of truth in your Protocol Buffers definitions.
+A high-performance, `protoc` plugin that generates a reverse proxy server to translate a RESTful HTTP API into gRPC. This project allows you to expose your gRPC services as HTTP/JSON endpoints defined by `google.api.http` annotations, maintaining a single source of truth in your Protocol Buffers definitions.
 
 > **Note:** This project is a Rust implementation inspired by the Go [grpc-gateway](https://github.com/grpc-ecosystem/grpc-gateway).
 
@@ -38,38 +37,36 @@ HTTP/JSON endpoints defined by `google.api.http` annotations, maintaining a sing
 
 ## Introduction
 
-`grpc-gateway-rust` reads Protocol Buffer service definitions and generates a reverse-proxy server which translates a RESTful JSON API into gRPC. This server is generated according
-to the `google.api.http` annotations in your `.proto` files.
+`grpc-gateway-rust` reads Protocol Buffer service definitions and generates a reverse-proxy server which translates a RESTful JSON API into gRPC. This server is generated according to the `google.api.http` annotations in your `.proto` files.
 
 This approach helps you:
-
 - **Design API First**: Use Protocol Buffers as the single source of truth.
 - **Support Legacy Clients**: Provide HTTP/JSON APIs for clients that do not support gRPC.
 - **Automate Boilerplate**: Eliminate the need to manually write HTTP handlers and mappers.
 
 ## Features
 
-* **JSON Transcoding**: Automatically converts JSON request bodies to Protobuf messages and vice-versa using `serde`.
-* **Standard Annotations**: Full support for `google.api.http` options (verbs, paths, body mappings).
-* **Type Safety**: Generated code leverages Rust's strong type system for compile-time verification of routes.
-* **Multipart Support**: Built-in support for `multipart/form-data` uploads using `multer`.
-* **Streaming Responses**: Supports server-side streaming responses (file downloads, event streams) via `http-body`.
-* **Ecosystem Native**: Built on top of the best-in-class Rust async ecosystem:
-    * **[Tonic](https://github.com/hyperium/tonic)**: For gRPC implementation.
-    * **[Prost](https://github.com/tokio-rs/prost)**: For Protocol Buffers serialization.
-    * **[Hyper](https://hyper.rs)**: For low-level HTTP implementation.
-    * **[Tower](https://github.com/tower-rs/tower)**: For robust middleware and service composition.
+*   **JSON Transcoding**: Automatically converts JSON request bodies to Protobuf messages and vice-versa using `serde`.
+*   **Standard Annotations**: Full support for `google.api.http` options (verbs, paths, body mappings).
+*   **Type Safety**: Generated code leverages Rust's strong type system for compile-time verification of routes.
+*   **Multipart Support**: Built-in support for `multipart/form-data` uploads using `multer`.
+*   **Streaming Responses**: Supports server-side streaming responses (file downloads, event streams) via `http-body`.
+*   **Ecosystem Native**: Built on top of the best-in-class Rust async ecosystem:
+    *   **[Tonic](https://github.com/hyperium/tonic)**: For gRPC implementation.
+    *   **[Prost](https://github.com/tokio-rs/prost)**: For Protocol Buffers serialization.
+    *   **[Hyper](https://hyper.rs)**: For low-level HTTP implementation.
+    *   **[Tower](https://github.com/tower-rs/tower)**: For robust middleware and service composition.
 
 ## Architecture
 
 The project is organized as a workspace with the following crates:
 
-| Crate                         | Description                                                                                                                      |
-|-------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
+| Crate | Description |
+|-------|-------------|
 | **`protoc-gen-grpc-gateway`** | The `protoc` plugin executable. It parses `.proto` files and outputs Rust code. [See detailed usage](gateway-codegen/README.md). |
-| **`gateway-runtime`**         | The library required by generated code. Handles routing, marshaling, and error mapping.                                          |
-| **`gateway-annotations`**     | Parses `google.api.http` options from the `descriptor.proto`.                                                                    |
-| **`gateway-internal`**        | Shared internal models used by both codegen and runtime.                                                                         |
+| **`gateway-runtime`** | The library required by generated code. Handles routing, marshaling, and error mapping. |
+| **`gateway-annotations`** | Parses `google.api.http` options from the `descriptor.proto`. |
+| **`gateway-internal`** | Shared internal models used by both codegen and runtime. |
 
 ### Request Flow
 
@@ -180,7 +177,8 @@ use tonic::transport::Channel;
 pub mod pb {
     tonic::include_proto!("example");
     // Include the gateway generated code
-    include!(concat!(env!("OUT_DIR"), "/gateway/example.rs"));
+    // The file name is based on the proto package name (e.g. package example -> example.gw.rs)
+    include!(concat!(env!("OUT_DIR"), "/gateway/example.gw.rs"));
 }
 
 #[tokio::main]
@@ -222,11 +220,9 @@ impl Codec for MyCustomCodec {
 
 ## Multipart Support
 
-The gateway supports `multipart/form-data` for file uploads. If a method accepts a message where fields map to multipart parts (e.g. `bytes content = 2; string filename = 1;`), the
-gateway will parse the multipart body and populate the message fields.
+The gateway supports `multipart/form-data` for file uploads. If a method accepts a message where fields map to multipart parts (e.g. `bytes content = 2; string filename = 1;`), the gateway will parse the multipart body and populate the message fields.
 
 Example Proto:
-
 ```protobuf
 message CreateFileRequest {
   string filename = 1;
@@ -262,10 +258,10 @@ See [`examples/src/load_balancing/gateway.rs`](examples/src/load_balancing/gatew
 
 Check the [`examples/`](examples/) directory for a complete, compilable workspace that demonstrates various scenarios:
 
-* **`a_bit_of_everything`**: A full-featured example showcasing most supported features (verbs, path params, body mapping, query params, etc.).
-* **`multipart`**: Demonstrates file uploads and streaming downloads.
-* **`load_balancing`**: Shows how to configure the gateway with a load-balanced Tonic channel.
-* **`actix_integration`**: Demonstrates how to mount the gateway router within an Actix Web application.
+*   **`a_bit_of_everything`**: A full-featured example showcasing most supported features (verbs, path params, body mapping, query params, etc.).
+*   **`multipart`**: Demonstrates file uploads and streaming downloads.
+*   **`load_balancing`**: Shows how to configure the gateway with a load-balanced Tonic channel.
+*   **`actix_integration`**: Demonstrates how to mount the gateway router within an Actix Web application.
 
 To run the examples:
 
@@ -292,12 +288,12 @@ This project is in its early stages. Future planned features include:
 
 Contributions are welcome!
 
-1. Fork the repository.
-2. Create a feature branch.
-3. Add tests for your changes.
-4. Run `cargo test` to ensure everything passes.
-5. Submit a Pull Request.
+1.  Fork the repository.
+2.  Create a feature branch.
+3.  Add tests for your changes.
+4.  Run `cargo test` to ensure everything passes.
+5.  Submit a Pull Request.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License Version 2.0 - see the [LICENSE](LICENSE) file for details.

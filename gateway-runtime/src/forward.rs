@@ -21,7 +21,7 @@
 
 use crate::codec::Codec;
 use crate::errors::GatewayError;
-use crate::BoxBody;
+use crate::{BoxBody, GatewayRequest};
 use futures::{Stream, StreamExt};
 use http::{Response, StatusCode};
 use http_body::Frame;
@@ -36,19 +36,26 @@ use prost::Message;
 /// # Parameters
 /// *   `codec`: The codec used to encode the message.
 /// *   `msg`: The gRPC message to send.
+/// *   `req`: The incoming request (used to determine `Accept` header).
 ///
 /// # Returns
 /// A `Result` containing the HTTP response with the encoded body, or a `GatewayError` if encoding fails.
 pub fn forward_response_message<T: Message + serde::Serialize, C: Codec>(
     codec: &C,
     msg: &T,
+    req: &GatewayRequest,
 ) -> Result<Response<BoxBody>, GatewayError> {
-    let body_bytes = codec.encode(msg)?;
+    let accept = req
+        .headers()
+        .get(http::header::ACCEPT)
+        .and_then(|h| h.to_str().ok());
+    let content_type = codec.encoder_content_type(accept);
+    let body_bytes = codec.encode(msg, Some(&content_type))?;
     let body = BodyExt::boxed_unsync(Full::new(body_bytes).map_err(|never| match never {}));
 
     Response::builder()
         .status(StatusCode::OK)
-        .header("Content-Type", C::CONTENT_TYPE)
+        .header("Content-Type", content_type)
         .body(body)
         .map_err(GatewayError::Http)
 }
@@ -64,36 +71,41 @@ pub fn forward_response_message<T: Message + serde::Serialize, C: Codec>(
 /// # Parameters
 /// *   `codec`: The codec used to encode stream items.
 /// *   `stream`: The incoming gRPC stream.
+/// *   `req`: The incoming request (used to determine `Accept` header).
 ///
 /// # Returns
 /// A `Result` containing the HTTP response with the aggregated body, or a `GatewayError` if processing fails.
 pub async fn forward_response_stream<S, T, C>(
     codec: &C,
     stream: S,
+    req: &GatewayRequest,
 ) -> Result<Response<BoxBody>, GatewayError>
 where
-    S: Stream<Item=Result<T, tonic::Status>> + Send + 'static,
+    S: Stream<Item = Result<T, tonic::Status>> + Send + 'static,
     T: Message + serde::Serialize,
     C: Codec + Clone + Send + Sync + 'static,
 {
+    let accept = req
+        .headers()
+        .get(http::header::ACCEPT)
+        .and_then(|h| h.to_str().ok());
+    let content_type = codec.encoder_content_type(accept);
     let codec = codec.clone();
-    let stream = stream.map(move |result| {
-        match result {
-            Ok(msg) => {
-                match codec.encode(&msg) {
-                    Ok(bytes) => Ok(Frame::data(bytes)),
-                    Err(e) => Err(e),
-                }
-            }
-            Err(e) => Err(GatewayError::Upstream(e)),
-        }
+    let content_type_clone = content_type.clone();
+
+    let stream = stream.map(move |result| match result {
+        Ok(msg) => match codec.encode(&msg, Some(&content_type_clone)) {
+            Ok(bytes) => Ok(Frame::data(bytes)),
+            Err(e) => Err(e),
+        },
+        Err(e) => Err(GatewayError::Upstream(e)),
     });
 
     let body = BodyExt::boxed_unsync(StreamBody::new(stream));
 
     Response::builder()
         .status(StatusCode::OK)
-        .header("Content-Type", C::CONTENT_TYPE)
+        .header("Content-Type", content_type)
         .body(body)
         .map_err(GatewayError::Http)
 }

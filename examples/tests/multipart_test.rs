@@ -40,7 +40,11 @@ impl StoredFileService for MyStoredFileService {
         request: Request<CreateFileRequest>,
     ) -> Result<Response<StoredFile>, Status> {
         let inner = request.into_inner();
-        println!("gRPC (Test) Request (CreateStoredFile): filename={}, content_len={}", inner.filename, inner.content.len());
+        println!(
+            "gRPC (Test) Request (CreateStoredFile): filename={}, content_len={}",
+            inner.filename,
+            inner.content.len()
+        );
 
         Ok(Response::new(StoredFile {
             original_file_name: inner.filename,
@@ -94,7 +98,9 @@ async fn test_multipart_upload_and_download() {
     tokio::spawn(async move {
         Server::builder()
             .add_service(StoredFileServiceServer::new(service))
-            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(grpc_listener))
+            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(
+                grpc_listener,
+            ))
             .await
             .unwrap();
     });
@@ -119,11 +125,7 @@ async fn test_multipart_upload_and_download() {
         let mut router = Router::<SyncService<BoxedGatewayService>>::new();
         let codec = JsonCodec;
 
-        StoredFileServiceRegistration::register_stored_file_service(
-            &mut router,
-            client,
-            codec,
-        );
+        StoredFileServiceRegistration::register_stored_file_service(&mut router, client, codec);
 
         let router = Arc::new(router);
 
@@ -146,7 +148,9 @@ async fn test_multipart_upload_and_download() {
                                 let method = parts.method.clone();
                                 let path = parts.uri.path().to_string();
 
-                                if let Some((service, params)) = router.match_request(&method, &path) {
+                                if let Some((service, params)) =
+                                    router.match_request(&method, &path)
+                                {
                                     let mut service = service.get().clone();
                                     parts.extensions.insert(params);
                                     let gateway_req = GatewayRequest::from_parts(parts, body_vec);
@@ -156,7 +160,9 @@ async fn test_multipart_upload_and_download() {
                                 } else {
                                     Ok(hyper::Response::builder()
                                         .status(hyper::StatusCode::NOT_FOUND)
-                                        .body(BodyExt::boxed_unsync(Full::new(Bytes::new()).map_err(|_| unreachable!())))
+                                        .body(BodyExt::boxed_unsync(
+                                            Full::new(Bytes::new()).map_err(|_| unreachable!()),
+                                        ))
                                         .unwrap())
                                 }
                             }
@@ -175,11 +181,16 @@ async fn test_multipart_upload_and_download() {
 
     // 3. Test Multipart Upload
     let client = reqwest::Client::new();
-    let form = multipart::Form::new()
-        .text("filename", "test.txt")
-        .part("content", multipart::Part::bytes(b"Hello World".to_vec()).file_name("test.txt").mime_str("text/plain").unwrap());
+    let form = multipart::Form::new().text("filename", "test.txt").part(
+        "content",
+        multipart::Part::bytes(b"Hello World".to_vec())
+            .file_name("test.txt")
+            .mime_str("text/plain")
+            .unwrap(),
+    );
 
-    let resp = client.post(format!("{}/v1/example/files", gateway_url))
+    let resp = client
+        .post(format!("{}/v1/example/files", gateway_url))
         .multipart(form)
         .send()
         .await
@@ -192,7 +203,11 @@ async fn test_multipart_upload_and_download() {
     assert_eq!(json["size_bytes"], 11); // integer because standard serde serialization without protojson options uses number
 
     // 4. Test Download Stream
-    let resp = client.get(format!("{}/v1/example/123/files/download/stored-uuid-123", gateway_url))
+    let resp = client
+        .get(format!(
+            "{}/v1/example/123/files/download/stored-uuid-123",
+            gateway_url
+        ))
         .send()
         .await
         .unwrap();

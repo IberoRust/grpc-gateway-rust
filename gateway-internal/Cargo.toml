@@ -1,9 +1,9 @@
 [package]
 name = "gateway-internal"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Internal shared models for the Rust gRPC Gateway."
-license = "MIT"
+license = "Apache-2.0"
 repository = "https://github.com/IberoRust/grpc-gateway-rust"
 
 [dependencies]

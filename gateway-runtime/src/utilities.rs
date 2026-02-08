@@ -147,14 +147,19 @@ where
         let value = serde_json::Value::Object(map);
         serde_json::from_value(value).map_err(|e| GatewayError::Encoding(Box::new(e)))
     } else {
-        codec.decode(&body)
+        let content_type = if content_type.is_empty() {
+            None
+        } else {
+            Some(content_type)
+        };
+        codec.decode(&body, content_type)
     }
 }
 
 /// Parses the request body into a Protobuf message (no_std fallback).
 #[cfg(not(feature = "std"))]
 pub async fn parse_body<T, C>(
-    _headers: &http::HeaderMap,
+    headers: &http::HeaderMap,
     body: alloc::vec::Vec<u8>,
     codec: &C,
 ) -> Result<T, crate::errors::GatewayError>
@@ -162,5 +167,8 @@ where
     T: prost::Message + Default + serde::de::DeserializeOwned,
     C: crate::codec::Codec,
 {
-    codec.decode(&body)
+    let content_type = headers
+        .get(http::header::CONTENT_TYPE)
+        .and_then(|h| h.to_str().ok());
+    codec.decode(&body, content_type)
 }

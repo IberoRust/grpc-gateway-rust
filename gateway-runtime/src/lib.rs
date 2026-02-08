@@ -26,18 +26,18 @@
 
 #![doc(html_root_url = "https://docs.rs/grpc-gateway-rust/0.1.0")]
 #![cfg_attr(not(feature = "std"), no_std)]
-#![doc = include_str!("../../../../README.md")]
+#![doc = include_str!("../../README.md")]
 
 // Re-export the alloc crate for use within derived code.
 #[doc(hidden)]
 pub extern crate alloc;
 
+pub mod codec;
 pub mod errors;
 pub mod forward;
-pub mod codec;
 pub mod metadata;
-pub mod router;
 pub mod pattern;
+pub mod router;
 pub mod utilities;
 
 pub use bytes;
@@ -63,8 +63,5 @@ pub type GatewayResponse = http::Response<BoxBody>;
 pub type GatewayResult = Result<GatewayResponse, GatewayError>;
 
 /// A boxed cloneable service for handling gateway requests.
-pub type BoxedGatewayService = tower::util::BoxCloneService<
-    http::Request<Vec<u8>>,
-    http::Response<BoxBody>,
-    GatewayError,
->;
+pub type BoxedGatewayService =
+    tower::util::BoxCloneService<http::Request<Vec<u8>>, http::Response<BoxBody>, GatewayError>;

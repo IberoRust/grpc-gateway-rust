@@ -41,7 +41,9 @@ pub mod grpc {
                         tonic::include_proto!("grpc.gateway.examples.internal.proto.oneofenum");
                     }
                     pub mod examplemultipar {
-                        tonic::include_proto!("grpc.gateway.examples.internal.proto.examplemultipar");
+                        tonic::include_proto!(
+                            "grpc.gateway.examples.internal.proto.examplemultipar"
+                        );
                     }
                 }
             }
@@ -51,23 +53,17 @@ pub mod grpc {
 
 pub mod gateway {
     use crate::grpc;
-    // Make grpc available to generated code
-        use crate::google;
-    // Make google available to generated code
+    use crate::google;
+
+    // Make grpc available to generated code // Make google available to generated code
     include!(concat!(
-    env!("OUT_DIR"),
-    "/gateway/examplepb/a_bit_of_everything.rs"
+        env!("OUT_DIR"),
+        "/gateway/grpc.gateway.examples.internal.proto.examplepb.gw.rs"
     ));
     include!(concat!(
-    env!("OUT_DIR"),
-    "/gateway/examplemultipart/stored_file_service.rs"
+        env!("OUT_DIR"),
+        "/gateway/grpc.gateway.examples.internal.proto.examplemultipar.gw.rs"
     ));
-    // Also include other generated files if they exist?
-    // build.rs generates into `gateway/examplepb/a_bit_of_everything.rs`?
-    // The previous code only included that one file.
-    // Wait, build.rs says:
-    // .compile_protos(&["proto/examplepb/a_bit_of_everything.proto"], &["proto/"])
-    // So yes.
 }
 
 pub mod examplepb {

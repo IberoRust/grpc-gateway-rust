@@ -9,7 +9,7 @@ use gateway_examples::gateway::{
     SnakeEnumServiceRegistration,
 };
 
-use gateway_runtime::codec::JsonCodec;
+use gateway_runtime::codec::{JsonCodec, MultimediaCodec, ProtobufCodec};
 use gateway_runtime::router::Router;
 use gateway_runtime::tower::Service;
 use gateway_runtime::utilities::SyncService;
@@ -50,7 +50,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 2. Setup Router
     // We use SyncService to wrap BoxCloneService so it can be Sync and thus stored in Arc<Router>
     let mut router = Router::<SyncService<BoxedGatewayService>>::new();
-    let codec = JsonCodec;
+
+    // Configure codecs
+    let json_codec = JsonCodec::pretty();
+    let proto_codec = ProtobufCodec;
+    let codec = MultimediaCodec::with_codecs(json_codec, proto_codec);
 
     // The generated register function accepts S: From<BoxedGatewayService>.
     // SyncService<BoxedGatewayService> implements From<BoxedGatewayService>.
@@ -101,7 +105,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 Ok(b) => b.to_bytes(),
                                 Err(e) => {
                                     eprintln!("Error collecting body: {:?}", e);
-                                    let body = BodyExt::boxed_unsync(Full::new(Bytes::from("Bad Request")).map_err(|e| -> gateway_runtime::errors::GatewayError { match e {} }));
+                                    let body = BodyExt::boxed_unsync(
+                                        Full::new(Bytes::from("Bad Request")).map_err(
+                                            |e| -> gateway_runtime::errors::GatewayError {
+                                                match e {}
+                                            },
+                                        ),
+                                    );
                                     return Ok::<_, std::convert::Infallible>(
                                         http::Response::builder()
                                             .status(http::StatusCode::BAD_REQUEST)
@@ -135,7 +145,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     Ok(r) => r,
                                     Err(e) => {
                                         println!("Gateway Error: {:?}", e);
-                                        let body = BodyExt::boxed_unsync(Full::new(Bytes::new()).map_err(|e| -> gateway_runtime::errors::GatewayError { match e {} }));
+                                        let body =
+                                            BodyExt::boxed_unsync(Full::new(Bytes::new()).map_err(
+                                                |e| -> gateway_runtime::errors::GatewayError {
+                                                    match e {}
+                                                },
+                                            ));
                                         http::Response::builder()
                                             .status(http::StatusCode::INTERNAL_SERVER_ERROR)
                                             .body(body)
@@ -146,7 +161,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 Ok::<_, std::convert::Infallible>(resp)
                             } else {
                                 println!("API Gateway Response: Status=404 (Not Found)");
-                                let body = BodyExt::boxed_unsync(Full::new(Bytes::new()).map_err(|e| -> gateway_runtime::errors::GatewayError { match e {} }));
+                                let body = BodyExt::boxed_unsync(Full::new(Bytes::new()).map_err(
+                                    |e| -> gateway_runtime::errors::GatewayError { match e {} },
+                                ));
                                 Ok(http::Response::builder()
                                     .status(http::StatusCode::NOT_FOUND)
                                     .body(body)

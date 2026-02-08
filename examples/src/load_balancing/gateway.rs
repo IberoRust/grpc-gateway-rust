@@ -23,24 +23,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Configure Load Balanced Channel
     // List of gRPC server endpoints to balance between.
     // In a real scenario, these might come from service discovery (e.g., DNS, Consul).
-    let endpoints = vec![
-        "http://127.0.0.1:9090",
-        "http://127.0.0.1:9091",
-    ];
+    let endpoints = vec!["http://127.0.0.1:9090", "http://127.0.0.1:9091"];
 
-    println!("Creating load-balanced channel with endpoints: {:?}", endpoints);
+    println!(
+        "Creating load-balanced channel with endpoints: {:?}",
+        endpoints
+    );
 
     // Create a balanced channel using Round Robin (default behavior of balance_list)
     let channel = Channel::balance_list(
-        endpoints.into_iter()
-            .map(|e| Endpoint::from_static(e).timeout(Duration::from_secs(5)))
+        endpoints
+            .into_iter()
+            .map(|e| Endpoint::from_static(e).timeout(Duration::from_secs(5))),
     );
 
     let client = ABitOfEverythingServiceClient::new(channel);
 
     // 2. Setup Router
     let mut router = Router::<SyncService<BoxedGatewayService>>::new();
-    let codec = JsonCodec;
+    let codec = JsonCodec::new();
 
     // Register the service. The client internally handles load balancing.
     ABitOfEverythingServiceRegistration::register_a_bit_of_everything_service(
@@ -76,7 +77,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     return Ok::<_, std::convert::Infallible>(
                                         http::Response::builder()
                                             .status(http::StatusCode::BAD_REQUEST)
-                                            .body(BodyExt::boxed_unsync(Full::new(Bytes::from("Bad Request")).map_err(|e| -> gateway_runtime::errors::GatewayError { match e {} })))
+                                            .body(BodyExt::boxed_unsync(
+                                                Full::new(Bytes::from("Bad Request")).map_err(
+                                                    |e| -> gateway_runtime::errors::GatewayError {
+                                                        match e {}
+                                                    },
+                                                ),
+                                            ))
                                             .unwrap(),
                                     );
                                 }
@@ -99,7 +106,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         eprintln!("Gateway Error: {:?}", e);
                                         http::Response::builder()
                                             .status(http::StatusCode::INTERNAL_SERVER_ERROR)
-                                            .body(BodyExt::boxed_unsync(Full::new(Bytes::new()).map_err(|e| -> gateway_runtime::errors::GatewayError { match e {} })))
+                                            .body(BodyExt::boxed_unsync(
+                                                Full::new(Bytes::new()).map_err(
+                                                    |e| -> gateway_runtime::errors::GatewayError {
+                                                        match e {}
+                                                    },
+                                                ),
+                                            ))
                                             .unwrap()
                                     }
                                 };
@@ -107,7 +120,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             } else {
                                 Ok(http::Response::builder()
                                     .status(http::StatusCode::NOT_FOUND)
-                                    .body(BodyExt::boxed_unsync(Full::new(Bytes::new()).map_err(|e| -> gateway_runtime::errors::GatewayError { match e {} })))
+                                    .body(BodyExt::boxed_unsync(Full::new(Bytes::new()).map_err(
+                                        |e| -> gateway_runtime::errors::GatewayError { match e {} },
+                                    )))
                                     .unwrap())
                             }
                         }

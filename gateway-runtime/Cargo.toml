@@ -1,15 +1,15 @@
 [package]
 name = "gateway-runtime"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Runtime library for the Rust gRPC Gateway."
-license = "MIT"
+license = "Apache-2.0"
 repository = "https://github.com/IberoRust/grpc-gateway-rust"
 keywords = ["grpc", "protobuf", "gateway", "runtime"]
 categories = ["web-programming::http-server"]
 
 [dependencies]
-gateway-internal = { version = "0.1.0", path = "../gateway-internal" }
+gateway-internal = { version = "0.1.1", path = "../gateway-internal" }
 http = "1.4"
 tonic = "0.14"
 prost = "0.14"

@@ -1,9 +1,9 @@
 [package]
 name = "protoc-gen-grpc-gateway"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "A protoc plugin that generates a gRPC-Gateway proxy in Rust."
-license = "MIT"
+license = "Apache-2.0"
 repository = "https://github.com/IberoRust/grpc-gateway-rust"
 keywords = ["grpc", "protobuf", "gateway", "proxy", "generator"]
 categories = ["development-tools", "network-programming", "web-programming"]
@@ -15,8 +15,8 @@ path = "src/lib.rs"
 
 [dependencies]
 prost = "0.14"
-gateway-annotations = { version = "0.1.0", path = "../gateway-annotations" }
-gateway-internal = { version = "0.1.0", path = "../gateway-internal" }
+gateway-annotations = { version = "0.1.1", path = "../gateway-annotations" }
+gateway-internal = { version = "0.1.1", path = "../gateway-internal" }
 
 quote = "1.0"
 proc-macro2 = "1.0"
