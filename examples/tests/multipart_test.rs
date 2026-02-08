@@ -8,7 +8,7 @@ use gateway_examples::examplemultipart::{
 use gateway_examples::gateway::StoredFileServiceRegistration;
 use gateway_examples::google::api::HttpBody;
 
-use gateway_runtime::codec::JsonCodec;
+use gateway_runtime::codec::MultimediaCodec;
 use gateway_runtime::router::Router;
 use gateway_runtime::tower::Service;
 use gateway_runtime::utilities::SyncService;
@@ -123,7 +123,7 @@ async fn test_multipart_upload_and_download() {
 
         let client = StoredFileServiceClient::new(channel);
         let mut router = Router::<SyncService<BoxedGatewayService>>::new();
-        let codec = JsonCodec::new();
+        let codec = MultimediaCodec::new();
 
         StoredFileServiceRegistration::register_stored_file_service(&mut router, client, codec);
 

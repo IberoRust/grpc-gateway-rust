@@ -25,8 +25,6 @@
 //! -   **Extensibility**: The `Codec` and `Router` abstractions allow for plugging in different serialization formats and routing strategies.
 
 #![doc(html_root_url = "https://docs.rs/grpc-gateway-rust/0.1.1")]
-#![cfg_attr(not(feature = "std"), no_std)]
-#![doc = include_str!("../../README.md")]
 
 // Re-export the alloc crate for use within derived code.
 #[doc(hidden)]
