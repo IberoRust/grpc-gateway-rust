@@ -1,6 +1,3 @@
-#![doc(html_root_url = "https://docs.rs/gateway-internal/0.1.1")]
-#![doc = include_str!("../../README.md")]
-
 use gateway_annotations::google::protobuf_custom::compiler::code_generator_response::File;
 use gateway_annotations::google::protobuf_custom::compiler::{
     CodeGeneratorRequest, CodeGeneratorResponse,

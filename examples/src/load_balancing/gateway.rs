@@ -95,7 +95,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             println!("Load Balanced Request: {} {}", method, path);
 
-                            if let Some((service, params)) = router.match_request(&method, &path) {
+                            if let Some((service, params, _meta)) =
+                                router.match_request(&method, &path)
+                            {
                                 let mut service = service.get().clone();
                                 parts.extensions.insert(params);
                                 let gateway_req = GatewayRequest::from_parts(parts, body_vec);

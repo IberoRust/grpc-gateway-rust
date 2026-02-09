@@ -29,7 +29,7 @@ fn test_routing_simple_match() {
 
     let result = router.match_request(&Method::GET, "/v1/echo");
     assert!(result.is_some());
-    let (handler, params) = result.unwrap();
+    let (handler, params, _) = result.unwrap();
     assert_eq!(*handler, "echo_handler");
     assert!(params.is_empty());
 
@@ -72,7 +72,7 @@ fn test_routing_variable_capture() {
 
     let result = router.match_request(&Method::GET, "/v1/messages/123");
     assert!(result.is_some());
-    let (_, params) = result.unwrap();
+    let (_, params, _) = result.unwrap();
     assert_eq!(params.get("id").map(|s| s.as_str()), Some("123"));
 }
 

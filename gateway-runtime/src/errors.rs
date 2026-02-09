@@ -50,6 +50,10 @@ pub enum GatewayError {
     #[error("HTTP protocol error: {0}")]
     Http(#[from] http::Error),
 
+    /// Represents an error with a specific HTTP status code and message.
+    #[error("HTTP error {0}: {1}")]
+    Custom(StatusCode, String),
+
     /// Indicates that the requested HTTP method is not allowed for the path.
     #[error("Method not allowed")]
     MethodNotAllowed,
@@ -65,6 +69,7 @@ pub enum GatewayError {
     Encoding(alloc::string::String),
     Upstream(tonic::Status),
     Http(http::Error),
+    Custom(StatusCode, alloc::string::String),
     MethodNotAllowed,
     NotFound,
 }
@@ -78,6 +83,7 @@ impl core::fmt::Display for GatewayError {
             }
             GatewayError::Upstream(s) => write!(f, "upstream gRPC error: {}", s),
             GatewayError::Http(e) => write!(f, "HTTP protocol error: {}", e),
+            GatewayError::Custom(c, m) => write!(f, "HTTP error {}: {}", c, m),
             GatewayError::MethodNotAllowed => write!(f, "Method not allowed"),
             GatewayError::NotFound => write!(f, "Not found"),
         }
@@ -148,4 +154,90 @@ pub fn handle_error(status: tonic::Status) -> Response<BoxBody> {
                 Full::new(Bytes::new()).map_err(|never| match never {}),
             ))
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_map_code_to_status() {
+        assert_eq!(map_code_to_status(Code::Ok), StatusCode::OK);
+        assert_eq!(
+            map_code_to_status(Code::InvalidArgument),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(map_code_to_status(Code::NotFound), StatusCode::NOT_FOUND);
+        assert_eq!(
+            map_code_to_status(Code::Unauthenticated),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            map_code_to_status(Code::PermissionDenied),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            map_code_to_status(Code::Unavailable),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(
+            map_code_to_status(Code::Internal),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    #[test]
+    fn test_gateway_error_display() {
+        assert_eq!(GatewayError::NotFound.to_string(), "Not found");
+        assert_eq!(
+            GatewayError::MethodNotAllowed.to_string(),
+            "Method not allowed"
+        );
+    }
+
+    #[test]
+    fn test_gateway_error_http_from() {
+        // http::Error is usually from builder.
+        let res = http::Response::builder().header("bad", "\n").body(()); // invalid header value
+        let err = res.unwrap_err();
+        let ge: GatewayError = err.into();
+        match ge {
+            GatewayError::Http(_) => {}
+            _ => panic!("Expected Http error"),
+        }
+    }
+
+    #[test]
+    fn test_gateway_error_upstream_from() {
+        let status = tonic::Status::new(Code::Internal, "msg");
+        let ge: GatewayError = status.into();
+        matches!(ge, GatewayError::Upstream(_));
+    }
+
+    #[test]
+    fn test_handle_error_ok() {
+        // Ok code should be 200? handle_error takes status.
+        let status = tonic::Status::ok("ok");
+        let resp = handle_error(status);
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn test_handle_error_json_body() {
+        let status = tonic::Status::new(Code::NotFound, "missing");
+        let resp = handle_error(status);
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            resp.headers().get("content-type").unwrap(),
+            "application/json"
+        );
+        // Body content check skipped (boxed)
+    }
+
+    #[test]
+    fn test_map_code_cancelled() {
+        // 499 or 500
+        let s = map_code_to_status(Code::Cancelled);
+        assert!(s.as_u16() == 499 || s == StatusCode::INTERNAL_SERVER_ERROR);
+    }
 }

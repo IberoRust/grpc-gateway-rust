@@ -1,3 +1,5 @@
+#![doc(html_root_url = "https://docs.rs/gateway-annotations/0.1.1")]
+
 pub mod google {
     pub mod api {
         include!(concat!(env!("OUT_DIR"), "/google.api.rs"));

@@ -24,7 +24,7 @@
 //! This crate is primarily intended to be used by the `protoc-gen-grpc-gateway` binary.
 //! However, it can be imported for testing or advanced integration scenarios.
 
-#![doc(html_root_url = "https://docs.rs/protoc-gen-grpc-gateway/0.1.1")]
+#![doc(html_root_url = "https://docs.rs/protoc-gen-grpc-gateway/0.2.0")]
 
 /// Processes Protobuf descriptors into an intermediate service representation.
 pub mod descriptor_processor;

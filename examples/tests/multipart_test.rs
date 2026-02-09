@@ -148,7 +148,7 @@ async fn test_multipart_upload_and_download() {
                                 let method = parts.method.clone();
                                 let path = parts.uri.path().to_string();
 
-                                if let Some((service, params)) =
+                                if let Some((service, params, _meta)) =
                                     router.match_request(&method, &path)
                                 {
                                     let mut service = service.get().clone();

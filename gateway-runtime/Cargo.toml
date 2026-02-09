@@ -1,6 +1,6 @@
 [package]
 name = "gateway-runtime"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 description = "Runtime library for the Rust gRPC Gateway."
 license = "Apache-2.0"
@@ -9,6 +9,7 @@ keywords = ["grpc", "protobuf", "gateway", "runtime"]
 categories = ["web-programming::http-server"]
 
 [dependencies]
+percent-encoding = "2.3"
 gateway-internal = { version = "0.1.1", path = "../gateway-internal" }
 http = "1.4"
 tonic = "0.14"
@@ -21,10 +22,16 @@ bytes = "1.5"
 tower = { version = "0.5", features = ["util"] }
 http-body = "1.0"
 http-body-util = "0.1"
-mime = "0.3"
 multer = "3.1"
-base64 = "0.22"
 
 [features]
-default = ["std"]
+default = ["std", "tokio"]
 std = []
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[dependencies.tokio]
+version = "1"
+features = ["signal", "macros"]
+optional = true
