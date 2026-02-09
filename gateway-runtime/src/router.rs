@@ -1,24 +1,25 @@
 //! # Router
 //!
 //! ## Purpose
-//! Manages the routing of incoming HTTP requests to registered services based on path patterns.
-//! This module acts as the request dispatcher, mapping HTTP method and path combinations
-//! to specific handlers (services).
+//! The `Router` module provides the core mechanism for dispatching incoming HTTP requests to
+//! the appropriate gRPC service handlers based on path patterns and HTTP methods.
 //!
-//! ## Scope
-//! This module defines:
-//! -   `Router`: The primary registry and dispatching struct.
-//! -   `route`: A helper function to register services with the router.
-//! -   Request matching logic that delegates to the pattern matching engine.
+//! ## Overview
+//! It maintains a registry of routes, where each route consists of:
+//! -   An HTTP Method (e.g., GET, POST).
+//! -   A compiled [Pattern] (from `gateway_internal::path_template`).
+//! -   A service handler (`S`) responsible for processing the request.
+//! -   [RouteMetadata], containing additional configuration like authentication requirements.
 //!
-//! ## Position in the Architecture
-//! The `Router` is instantiated by the user's application server. Generated code populates
-//! it with service handlers. During runtime, the HTTP server component uses the `Router`
-//! to identify which service should handle a given request.
+//! ## Matching Logic
+//! When `match_request` is called, the router iterates through the registered patterns for the
+//! given HTTP method. It uses the `gateway_internal` matching engine to determine if the
+//! request path matches a pattern. If a match is found, it returns the service, any captured
+//! path variables, and the route metadata.
 //!
-//! ## Design Constraints
-//! -   **`no_std` Compatibility**: Uses `BTreeMap` for storage to avoid dependency on the standard library's `HashMap`.
-//! -   **Generic Service Type**: The `Router` is generic over `S`, allowing it to store any type of service (e.g., `tower::Service`, `Box<dyn Service>`).
+//! ## Usage
+//! The router is typically populated by generated code calling `route` or `route_with_metadata`.
+//! At runtime, it is wrapped by the `Gateway` service.
 
 use crate::pattern::route_matcher;
 use alloc::collections::BTreeMap;
@@ -27,32 +28,59 @@ use alloc::vec::Vec;
 use gateway_internal::path_template::Pattern;
 use http::Method;
 
-/// The main entry point for the gRPC gateway routing.
+/// Metadata associated with a route configuration.
 ///
-/// Stores a mapping of HTTP methods to a list of route entries. Each entry contains
-/// a path pattern and the associated service.
+/// This struct holds static configuration derived from the `.proto` options, such as
+/// authentication requirements (e.g., `google.api.http` security rules).
+#[derive(Debug, Clone, Default)]
+pub struct RouteMetadata {
+    /// Configuration for API Key authentication, if required by the route.
+    pub auth_required: Option<AuthConfig>,
+}
+
+/// Configuration for API Key authentication.
+#[derive(Debug, Clone)]
+pub struct AuthConfig {
+    /// The authentication scheme (e.g., "ApiKey").
+    pub scheme: String,
+    /// The location of the API key in the request.
+    pub location: AuthLocation,
+    /// The name of the header, query parameter, or cookie.
+    pub name: String,
+}
+
+/// The location of the authentication credential.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthLocation {
+    /// Credential is in an HTTP header.
+    Header,
+    /// Credential is in the URL query string.
+    Query,
+    /// Credential is in a cookie.
+    Cookie,
+}
+
+/// The request dispatcher.
+///
+/// Maps (HTTP Method) -> List of (Pattern, Service, Metadata).
 ///
 /// # Type Parameters
-/// *   `S`: The type of service stored in the router. This allows for flexibility in
-///     the underlying service representation (e.g., boxed services, function pointers).
+/// *   `S`: The type of the service handler. This is typically `BoxCloneService` or similar.
+#[derive(Clone)]
 pub struct Router<S> {
-    /// Maps HTTP method strings (e.g., "GET") to a list of routes.
     routes: BTreeMap<String, Vec<RouteEntry<S>>>,
 }
 
-/// Represents a single route registration.
+/// A single entry in the routing table.
+#[derive(Clone)]
 struct RouteEntry<S> {
-    /// The compiled path pattern for matching.
     pattern: Pattern,
-    /// The service responsible for handling requests matching this pattern.
     service: S,
+    metadata: RouteMetadata,
 }
 
 impl<S> Router<S> {
     /// Creates a new, empty `Router`.
-    ///
-    /// # Returns
-    /// A new `Router` instance.
     pub fn new() -> Self {
         Self {
             routes: BTreeMap::new(),
@@ -68,18 +96,17 @@ impl<S> Router<S> {
     /// # Returns
     /// An `Option` containing a tuple if a match is found:
     /// -   `&S`: A reference to the matched service.
-    /// -   `BTreeMap<String, String>`: A map of captured path variables (e.g., matching `{id}` in a path).
-    ///
-    /// Returns `None` if no route matches the method and path.
+    /// -   `BTreeMap<String, String>`: A map of captured path variables (e.g., `id` from `/users/{id}`).
+    /// -   `&RouteMetadata`: Metadata associated with the matched route.
     pub fn match_request(
         &self,
         method: &Method,
         path: &str,
-    ) -> Option<(&S, BTreeMap<String, String>)> {
+    ) -> Option<(&S, BTreeMap<String, String>, &RouteMetadata)> {
         if let Some(entries) = self.routes.get(method.as_str()) {
             for entry in entries {
                 if let Some(captured) = route_matcher(&entry.pattern, path) {
-                    return Some((&entry.service, captured));
+                    return Some((&entry.service, captured, &entry.metadata));
                 }
             }
         }
@@ -93,21 +120,35 @@ impl<S> Default for Router<S> {
     }
 }
 
-/// Registers a service with the router.
-///
-/// This function adds a new route to the `Router` for a specific HTTP method and path pattern.
+/// Registers a service with the router using default metadata.
 ///
 /// # Parameters
-/// *   `router`: The `Router` instance to modify.
-/// *   `method`: The HTTP method for this route.
-/// *   `pattern`: The compiled path pattern.
-/// *   `service`: The service to register.
-///
-/// # Type Parameters
-/// *   `S`: The service type stored in the router.
-/// *   `C`: The type of the service being registered. It must be convertible into `S`.
+/// *   `router`: The router instance.
+/// *   `method`: HTTP method.
+/// *   `pattern`: Path pattern.
+/// *   `service`: The service handler.
 pub fn route<S, C>(router: &mut Router<S>, method: Method, pattern: Pattern, service: C)
 where
+    C: Into<S>,
+{
+    route_with_metadata(router, method, pattern, service, RouteMetadata::default())
+}
+
+/// Registers a service with the router, including specific metadata.
+///
+/// # Parameters
+/// *   `router`: The router instance.
+/// *   `method`: HTTP method.
+/// *   `pattern`: Path pattern.
+/// *   `service`: The service handler.
+/// *   `metadata`: Route-specific metadata.
+pub fn route_with_metadata<S, C>(
+    router: &mut Router<S>,
+    method: Method,
+    pattern: Pattern,
+    service: C,
+    metadata: RouteMetadata,
+) where
     C: Into<S>,
 {
     router
@@ -117,5 +158,193 @@ where
         .push(RouteEntry {
             pattern,
             service: service.into(),
+            metadata,
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gateway_internal::path_template::{Op, OpCode};
+
+    #[derive(Clone)]
+    struct MockService;
+    impl MockService {
+        fn new() -> Self {
+            Self
+        }
+    }
+
+    #[test]
+    fn test_router_insert_and_match() {
+        let mut router: Router<MockService> = Router::new();
+        let pattern = Pattern {
+            ops: vec![Op {
+                code: OpCode::LitPush,
+                operand: 0,
+            }],
+            pool: vec!["foo".to_string()],
+            vars: vec![],
+            stack_size: 1,
+            tail_len: 0,
+            verb: None,
+        };
+        route(&mut router, Method::GET, pattern, MockService::new());
+
+        let res = router.match_request(&Method::GET, "/foo");
+        assert!(res.is_some());
+    }
+
+    #[test]
+    fn test_router_method_mismatch() {
+        let mut router: Router<MockService> = Router::new();
+        let pattern = Pattern {
+            ops: vec![Op {
+                code: OpCode::LitPush,
+                operand: 0,
+            }],
+            pool: vec!["foo".to_string()],
+            vars: vec![],
+            stack_size: 1,
+            tail_len: 0,
+            verb: None,
+        };
+        route(&mut router, Method::GET, pattern, MockService::new());
+
+        let res = router.match_request(&Method::POST, "/foo");
+        assert!(res.is_none());
+    }
+
+    #[test]
+    fn test_router_path_mismatch() {
+        let mut router: Router<MockService> = Router::new();
+        let pattern = Pattern {
+            ops: vec![Op {
+                code: OpCode::LitPush,
+                operand: 0,
+            }],
+            pool: vec!["foo".to_string()],
+            vars: vec![],
+            stack_size: 1,
+            tail_len: 0,
+            verb: None,
+        };
+        route(&mut router, Method::GET, pattern, MockService::new());
+        assert!(router.match_request(&Method::GET, "/bar").is_none());
+    }
+
+    #[test]
+    fn test_router_multiple_routes() {
+        let mut router: Router<MockService> = Router::new();
+        let p1 = Pattern {
+            ops: vec![Op {
+                code: OpCode::LitPush,
+                operand: 0,
+            }],
+            pool: vec!["foo".to_string()],
+            vars: vec![],
+            stack_size: 1,
+            tail_len: 0,
+            verb: None,
+        };
+        let p2 = Pattern {
+            ops: vec![Op {
+                code: OpCode::LitPush,
+                operand: 0,
+            }],
+            pool: vec!["bar".to_string()],
+            vars: vec![],
+            stack_size: 1,
+            tail_len: 0,
+            verb: None,
+        };
+
+        route(&mut router, Method::GET, p1, MockService::new());
+        route(&mut router, Method::GET, p2, MockService::new());
+
+        assert!(router.match_request(&Method::GET, "/foo").is_some());
+        assert!(router.match_request(&Method::GET, "/bar").is_some());
+    }
+
+    #[test]
+    fn test_router_precedence() {
+        let mut router: Router<MockService> = Router::new();
+
+        // /foo
+        let p1 = Pattern {
+            ops: vec![Op {
+                code: OpCode::LitPush,
+                operand: 0,
+            }],
+            pool: vec!["foo".to_string()],
+            vars: vec![],
+            stack_size: 1,
+            tail_len: 0,
+            verb: None,
+        };
+        // /{var}
+        let p2 = Pattern {
+            ops: vec![
+                Op {
+                    code: OpCode::Push,
+                    operand: 0,
+                },
+                Op {
+                    code: OpCode::Capture,
+                    operand: 0,
+                },
+            ],
+            pool: vec![],
+            vars: vec!["v".to_string()],
+            stack_size: 1,
+            tail_len: 0,
+            verb: None,
+        };
+
+        // Route specific first
+        route(&mut router, Method::GET, p1, MockService::new());
+        route(&mut router, Method::GET, p2, MockService::new());
+
+        let (_s, c, _) = router.match_request(&Method::GET, "/foo").unwrap();
+        assert!(c.is_empty()); // p1 has no capture. p2 has.
+
+        let (_s, c, _) = router.match_request(&Method::GET, "/bar").unwrap();
+        assert!(!c.is_empty()); // Matches p2.
+    }
+
+    #[test]
+    fn test_router_metadata() {
+        let mut router: Router<MockService> = Router::new();
+        let pattern = Pattern {
+            ops: vec![Op {
+                code: OpCode::LitPush,
+                operand: 0,
+            }],
+            pool: vec!["foo".to_string()],
+            vars: vec![],
+            stack_size: 1,
+            tail_len: 0,
+            verb: None,
+        };
+        let meta = RouteMetadata {
+            auth_required: Some(AuthConfig {
+                scheme: "ApiKey".to_string(),
+                location: AuthLocation::Header,
+                name: "X-API-Key".to_string(),
+            }),
+        };
+
+        route_with_metadata(
+            &mut router,
+            Method::GET,
+            pattern,
+            MockService::new(),
+            meta.clone(),
+        );
+
+        let (_, _, matched_meta) = router.match_request(&Method::GET, "/foo").unwrap();
+        assert!(matched_meta.auth_required.is_some());
+        let auth = matched_meta.auth_required.as_ref().unwrap();
+        assert_eq!(auth.name, "X-API-Key");
+    }
 }

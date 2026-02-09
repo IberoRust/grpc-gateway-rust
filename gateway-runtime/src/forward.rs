@@ -109,3 +109,100 @@ where
         .body(body)
         .map_err(GatewayError::Http)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Mock Codec
+    #[derive(Clone)]
+    struct MockCodec;
+    impl Codec for MockCodec {
+        fn encode<T: Message + serde::Serialize>(
+            &self,
+            _item: &T,
+            _buf: Option<&str>,
+        ) -> Result<crate::bytes::Bytes, GatewayError> {
+            Ok(crate::bytes::Bytes::from_static(b"ok"))
+        }
+        fn decode<T: Message + Default + serde::de::DeserializeOwned>(
+            &self,
+            _buf: &[u8],
+            _content_type: Option<&str>,
+        ) -> Result<T, GatewayError> {
+            unimplemented!()
+        }
+        fn encoder_content_type(&self, _accept: Option<&str>) -> String {
+            "text/plain".to_string()
+        }
+    }
+
+    #[derive(serde::Serialize, prost::Message)]
+    struct Dummy {
+        #[prost(string, tag = "1")]
+        foo: String,
+    }
+
+    #[test]
+    fn test_forward_response_message() {
+        let codec = MockCodec;
+        let msg = Dummy::default();
+        let req = http::Request::builder().body(Vec::new()).unwrap();
+
+        let resp = forward_response_message(&codec, &msg, &req).unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers().get("content-type").unwrap(), "text/plain");
+        // body check skipped
+    }
+
+    #[tokio::test]
+    async fn test_forward_response_stream() {
+        let codec = MockCodec;
+        let stream = futures::stream::iter(vec![Ok(Dummy::default())]);
+        let req = http::Request::builder().body(Vec::new()).unwrap();
+
+        let resp = forward_response_stream(&codec, stream, &req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers().get("content-type").unwrap(), "text/plain");
+    }
+
+    #[test]
+    fn test_forward_response_message_accept() {
+        let codec = MockCodec; // returns text/plain regardless, but we check arg passed.
+                               // MockCodec ignores accept.
+                               // But function logic: req -> accept header -> codec.encoder_content_type(accept).
+                               // So it passes it.
+        let req = http::Request::builder()
+            .header("accept", "application/json")
+            .body(Vec::new())
+            .unwrap();
+        let resp = forward_response_message(&codec, &Dummy::default(), &req).unwrap();
+        assert_eq!(resp.headers().get("content-type").unwrap(), "text/plain");
+    }
+
+    #[tokio::test]
+    async fn test_forward_response_stream_error() {
+        let codec = MockCodec;
+        let stream = futures::stream::iter(vec![Err::<Dummy, tonic::Status>(
+            tonic::Status::internal("fail"),
+        )]);
+        let req = http::Request::builder().body(Vec::new()).unwrap();
+
+        // forward_response_stream maps stream items to Result<Frame, Error>.
+        // StreamBody iterates. If item is error, body stream yields error.
+        // It does NOT return Err from function immediately unless setup fails.
+        // The function returns Result<Response...>.
+        // The body is StreamBody.
+        // The stream inside yields Result.
+
+        let resp = forward_response_stream(&codec, stream, &req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // To verify body error, we must collect body.
+        let body = resp.into_body();
+        let collected = body.collect().await;
+        // Should be error?
+        // stream yields Err(GatewayError::Upstream(status)).
+        assert!(collected.is_err());
+    }
+}

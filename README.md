@@ -28,6 +28,7 @@ A high-performance, `protoc` plugin that generates a reverse proxy server to tra
 - [Architecture](#architecture)
 - [Prerequisites](#prerequisites)
 - [Getting Started](#getting-started)
+- [Runtime Features](#runtime-features)
 - [Advanced Usage](#advanced-usage)
 - [Examples](#examples)
 - [Roadmap](#roadmap)
@@ -97,7 +98,7 @@ tonic = "0.14"
 prost = "0.14"
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
-gateway-runtime = { path = "../path/to/gateway-runtime" } # Adjust path or version
+gateway-runtime = { version = "0.2" }
 
 [build-dependencies]
 tonic-build = "0.14"
@@ -169,7 +170,7 @@ fn main() {
 In `src/main.rs`, set up the Hyper server and register your gRPC client with the generated Gateway `Router`.
 
 ```rust,ignore
-use gateway_runtime::router::Router;
+use gateway_runtime::{Gateway, Router};
 use gateway_runtime::codec::JsonCodec;
 use tonic::transport::Channel;
 
@@ -194,13 +195,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The generator creates `{ServiceName}Registration`
     pb::GreeterRegistration::register_greeter(&mut router, client, JsonCodec);
 
-    // 4. Run the HTTP Server (using Hyper)
+    // 4. Create the Gateway Service with secure defaults
+    // This adds standard middleware (Error handling, Request ID, etc.)
+    let gateway_service = Gateway::new(router).into_service();
+
+    // 5. Run the HTTP Server (using Hyper)
     // See `examples/` for the full Hyper service boilerplate
     println!("Gateway listening on http://127.0.0.1:8080");
-    // ... Hyper server setup ...
+    // ... Hyper server setup usage of gateway_service ...
 
     Ok(())
 }
+```
+
+## Runtime Features
+
+The `gateway-runtime` (v0.2.0+) includes a comprehensive suite of middleware layers built on [Tower](https://github.com/tower-rs/tower).
+
+### Secure Defaults
+When initialized via `Gateway::new(router)`, the service comes pre-configured with:
+*   **Error Handling**: Automatically converts gRPC errors to standard JSON responses (`{ "code": 404, "message": "...", ... }`).
+*   **Security Headers**: Filters unsafe headers (`Authorization`, `Host`) from being forwarded upstream unless explicitly allowed.
+*   **Request ID**: Securely generates a unique `x-request-id` for every request to ensure traceability.
+*   **Response Modification**: Supports `x-http-code` gRPC metadata to override HTTP status codes.
+
+### Customizable Hooks
+You can extend the default behavior using the builder pattern:
+
+```rust,ignore
+let gateway = Gateway::new(router)
+    // Add custom response processing
+    .with_response_modifier(|req, resp| {
+        resp.headers_mut().insert("x-custom-header", "value".parse().unwrap());
+    })
+    // Configure path unescaping (e.g. for /v1/example/foo%20bar)
+    .with_unescaping_mode(UnescapingMode::AllCharacters)
+    // Add Metrics/Tracing hooks
+    .with_metrics_recorder(|req, res, duration| {
+        println!("Request to {} took {:?}", req.uri().path(), duration);
+    })
+    .into_service();
 ```
 
 ## Advanced Usage

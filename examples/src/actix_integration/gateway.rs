@@ -46,7 +46,7 @@ async fn gateway_handler(
         }
     }
 
-    if let Some((service, params)) = router.match_request(&method_http1, &path) {
+    if let Some((service, params, _meta)) = router.match_request(&method_http1, &path) {
         let mut service = service.get().clone();
         parts.extensions.insert(params);
         let gateway_req = GatewayRequest::from_parts(parts, body.to_vec());

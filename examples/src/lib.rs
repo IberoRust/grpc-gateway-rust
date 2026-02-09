@@ -52,8 +52,8 @@ pub mod grpc {
 }
 
 pub mod gateway {
-    use crate::grpc;
     use crate::google;
+    use crate::grpc;
 
     // Make grpc available to generated code // Make google available to generated code
     include!(concat!(
