@@ -105,7 +105,10 @@ fn test_documentation_generation() {
     assert_eq!(method_def.proto_file, "test.proto");
 
     // Generate code
-    let tokens = generator::generate_service(svc_def);
+    let options = generator::GeneratorOptions {
+        source_relative: false,
+    };
+    let tokens = generator::generate_service(svc_def, &options);
     let output = tokens.to_string();
 
     assert!(output.contains("# [doc = \"Service documentation line 1.\"]"));
@@ -163,7 +166,10 @@ fn test_missing_documentation_fallback() {
     assert!(method_def.docs.is_empty());
 
     // Generate code and check for footer
-    let tokens = generator::generate_service(svc_def);
+    let options = generator::GeneratorOptions {
+        source_relative: false,
+    };
+    let tokens = generator::generate_service(svc_def, &options);
     let output = tokens.to_string();
 
     // Method footer should be present

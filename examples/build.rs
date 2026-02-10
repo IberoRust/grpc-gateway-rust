@@ -23,6 +23,7 @@ fn main() {
         .protoc_arg("--experimental_allow_proto3_optional")
         .protoc_arg(format!("--plugin=protoc-gen-grpc-gateway-rust={}", plugin))
         .protoc_arg(format!("--grpc-gateway-rust_out={}", gateway_out.display()))
+        .protoc_arg("--grpc-gateway-rust_opt=no_include=true")
         .build_server(true)
         .build_client(true);
 

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2025-02-12
+
+### Changed
+- **Codegen:** Refactored to use `protoc-gen-prost` infrastructure for robust code generation.
+- **Codegen:** Enabled `source_relative` mode by default (`source_relative=true`).
+- **Codegen:** Changed generated code structure: now generates `pub mod {service_name}_gw` per service instead of a single package-level module.
+- **Codegen:** Removed `use_tonic_client` option (behavior is now default) and `insert_include` option (replaced by `no_include`).
+- **Codegen:** `no_include` option added (defaults to false) to disable automatic generation of `include!` macros in `mod.rs`.
+- **Codegen:** Generated client references now rely on relative imports, requiring generated files to be `include!`-ed alongside `tonic` generated code for correct `super` resolution.
+
 ## [0.2.0] - 2025-02-09
 
 ### Added

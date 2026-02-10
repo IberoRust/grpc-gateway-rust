@@ -3,27 +3,16 @@
 //! ## Purpose
 //! Contains the core logic for generating Rust source code from the processed service definitions.
 //! It constructs the AST (Abstract Syntax Tree) using `quote` and emits the final output.
-//!
-//! ## Scope
-//! This module provides:
-//! -   `generate_service`: The main function that produces the code for a single gRPC service.
-//! -   Helper functions for resolving types, safe identifiers, and field setters.
-//!
-//! ## Position in the Architecture
-//! Called by `main.rs` after the `FileDescriptorSet` has been processed by `descriptor_processor`.
-//! It takes `ServiceDefinition` structs and outputs `proc_macro2::TokenStream`s.
-//!
-//! ## Design Constraints
-//! -   **Code Correctness**: Generated code must compile and correctly use `gateway-runtime`.
-//! -   **Hygiene**: Uses `quote` to ensure proper scoping and avoid identifier collisions.
-//! -   **Formatting**: Output tokens are formatted later by `prettyplease`.
 
-use crate::descriptor_processor::ServiceDefinition;
+use crate::descriptor_processor::{self, ServiceDefinition};
 use crate::path_compiler;
 use gateway_internal::path_template::OpCode;
 use heck::{ToPascalCase, ToSnakeCase};
 use proc_macro2::{Ident, Span, TokenStream};
+use prost_types::compiler::code_generator_response::File;
+use protoc_gen_prost::{Generator, ModuleRequestSet, Result};
 use quote::{format_ident, quote};
+use std::collections::HashMap;
 
 /// Resolves a dot-separated protobuf type name to a Rust path token stream.
 fn resolve_type(type_name: &str) -> TokenStream {
@@ -35,6 +24,53 @@ fn resolve_type(type_name: &str) -> TokenStream {
             quote! { compile_error!(#msg); }
         }
     }
+}
+
+/// Options for the generator.
+pub struct GeneratorOptions {
+    pub source_relative: bool,
+}
+
+/// Resolves a relative Rust path for a type based on the current package.
+fn resolve_relative_type(
+    type_name: &str,
+    current_package: &str,
+) -> TokenStream {
+    if !type_name.starts_with('.') {
+        // Primitive or already resolved
+        return resolve_type(type_name);
+    }
+
+    let type_path = type_name.trim_start_matches('.');
+    let current_parts: Vec<&str> = current_package.split('.').filter(|s| !s.is_empty()).collect();
+    let type_parts: Vec<&str> = type_path.split('.').filter(|s| !s.is_empty()).collect();
+
+    let mut common_prefix_len = 0;
+    for (i, part) in current_parts.iter().enumerate() {
+        if i < type_parts.len() && part == &type_parts[i] {
+            common_prefix_len += 1;
+        } else {
+            break;
+        }
+    }
+
+    // Always +1 because we are always in a submodule now
+    let super_count = current_parts.len() - common_prefix_len + 1;
+    let mut tokens = TokenStream::new();
+
+    for _ in 0..super_count {
+        tokens.extend(quote! { super:: });
+    }
+
+    for (i, part) in type_parts.iter().skip(common_prefix_len).enumerate() {
+        let ident = safe_ident(part);
+        if i > 0 {
+            tokens.extend(quote! { :: });
+        }
+        tokens.extend(quote! { #ident });
+    }
+
+    tokens
 }
 
 /// Creates a safe Rust identifier from a string, escaping keywords.
@@ -103,27 +139,47 @@ fn generate_setter(field_path: &str, is_repeated: bool, field_type: Option<i32>)
 }
 
 /// Generates the Rust code for a gRPC service registration.
-/// Methods, docs, and registration logic are separated with newlines to ensure
-/// proper formatting after prettyplease.
-pub fn generate_service(service: &ServiceDefinition) -> TokenStream {
+pub fn generate_service(service: &ServiceDefinition, options: &GeneratorOptions) -> TokenStream {
     let registration_struct_name = format_ident!("{}Registration", service.name.to_pascal_case());
     let register_fn_name = format_ident!("register_{}", service.name.to_snake_case());
 
     let client_type = {
-        let pkg = resolve_type(&service.package);
         let svc_client_mod = format_ident!("{}_client", service.name.to_snake_case());
         let svc_client = format_ident!("{}Client", service.name.to_pascal_case());
-        quote! { #pkg::#svc_client_mod::#svc_client<gateway_runtime::tonic::transport::Channel> }
+
+        if options.source_relative {
+            // "dependency paths must be super::"
+            quote! { super::#svc_client_mod::#svc_client<gateway_runtime::tonic::transport::Channel> }
+        } else {
+            let pkg = resolve_type(&service.package);
+            quote! { #pkg::#svc_client_mod::#svc_client<gateway_runtime::tonic::transport::Channel> }
+        }
     };
 
     let service_docs = service.docs.iter().map(|line| quote! { #[doc = #line] });
 
-    // Generate service methods with separation
+    // Generate service methods
     let methods: Vec<TokenStream> = service.methods.iter().map(|method| {
         let method_name = safe_ident(&method.name.to_snake_case());
-        let input_type = resolve_type(&method.input_type);
+
+        let input_type = if options.source_relative {
+            resolve_relative_type(
+                &method.input_type,
+                &service.package,
+            )
+        } else {
+            resolve_type(&method.input_type)
+        };
+
         #[allow(unused_variables)]
-        let output_type = resolve_type(&method.output_type);
+        let output_type = if options.source_relative {
+            resolve_relative_type(
+                &method.output_type,
+                &service.package,
+            )
+        } else {
+            resolve_type(&method.output_type)
+        };
 
         let method_docs = if method.docs.is_empty() {
             let footer = format!(
@@ -187,11 +243,18 @@ pub fn generate_service(service: &ServiceDefinition) -> TokenStream {
         }
     }).collect();
 
-    // Generate registration logic with separation
+    // Generate registration logic
     let mut registration_logic: Vec<TokenStream> = Vec::new();
     for method in &service.methods {
         let method_name = format_ident!("{}", method.name.to_snake_case());
-        let input_type = resolve_type(&method.input_type);
+        let input_type = if options.source_relative {
+            resolve_relative_type(
+                &method.input_type,
+                &service.package,
+            )
+        } else {
+            resolve_type(&method.input_type)
+        };
 
         for binding in &method.bindings {
             let http_method_ident = format_ident!("{}", binding.http_method);
@@ -312,7 +375,7 @@ pub fn generate_service(service: &ServiceDefinition) -> TokenStream {
                     );
                 }
 
-            }); // <- newline here ensures separation
+            });
         }
     }
 
@@ -344,7 +407,127 @@ pub fn generate_service(service: &ServiceDefinition) -> TokenStream {
                 #( #registration_logic )*
             }
 
-            #( #methods )*  // <- methods are already separated by newlines in map above
+            #( #methods )*
         }
+    }
+}
+
+pub struct GrpcGatewayGenerator {
+    pub no_include: bool,
+    pub source_relative: bool,
+    pub file_map: HashMap<String, gateway_annotations::google::protobuf_custom::FileDescriptorProto>,
+}
+
+impl GrpcGatewayGenerator {
+    pub fn new(
+        file_map: HashMap<
+            String,
+            gateway_annotations::google::protobuf_custom::FileDescriptorProto,
+        >,
+    ) -> Self {
+        Self {
+            no_include: false,
+            source_relative: true,
+            file_map,
+        }
+    }
+}
+
+impl Generator for GrpcGatewayGenerator {
+    fn generate(&mut self, module_request_set: &ModuleRequestSet) -> Result {
+        let options = GeneratorOptions {
+            source_relative: self.source_relative,
+        };
+
+        // Initialize symbol registry from input files using the rich descriptors
+        let protos: Vec<gateway_annotations::google::protobuf_custom::FileDescriptorProto> = self.file_map.values().cloned().collect();
+        let registry = descriptor_processor::SymbolRegistry::new(&protos);
+
+        module_request_set
+            .requests()
+            .filter_map(|(_module, request)| {
+                let output_filename = format!("{}.gw.rs", request.proto_package_name());
+
+                // Aggregate all files in this request (which maps to one package)
+                let services: Vec<_> = request.files()
+                    .flat_map(|file| {
+                        // Look up the rich file descriptor using the name
+                        let file_name = file.name.as_deref().unwrap_or_default();
+
+                        if let Some(file_custom) = self.file_map.get(file_name) {
+                            match descriptor_processor::process_file(file_custom, &registry) {
+                                Ok(s) => s,
+                                Err(e) => {
+                                    eprintln!("Error processing file {}: {}", file_name, e);
+                                    Vec::new()
+                                }
+                            }
+                        } else {
+                            eprintln!("Warning: Could not find rich descriptor for {}", file_name);
+                            Vec::new()
+                        }
+                    })
+                    .collect();
+
+                if services.is_empty() {
+                    return None;
+                }
+
+                let mut file_tokens = TokenStream::new();
+                for svc in &services {
+                    let service_tokens = generate_service(svc, &options);
+                    let mod_name_str = format!("{}_gw", svc.name.to_snake_case());
+                    let mod_name = Ident::new(&mod_name_str, Span::call_site());
+
+                    file_tokens.extend(quote! {
+                        pub mod #mod_name {
+                            #![allow(clippy::all)]
+                            #![allow(dead_code)]
+                            #![allow(unused)]
+
+                            #service_tokens
+                        }
+                    });
+                }
+
+                let final_tokens = quote! {
+                    #file_tokens
+                };
+
+                let syntax_tree: syn::File = match syn::parse2(final_tokens) {
+                     Ok(f) => f,
+                     Err(e) => panic!("Failed to parse generated code: {}", e),
+                };
+                let formatted_content = prettyplease::unparse(&syntax_tree);
+                let version = env!("CARGO_PKG_VERSION");
+                let content = format!(
+                    "// This file is @generated by protoc-gen-grpc-gateway-rust version-{}.\n\n{}",
+                    version, formatted_content
+                );
+
+                let mut res = Vec::new();
+
+                if !self.no_include {
+                     if let Some(f) = request.append_to_file(|buf| {
+                        buf.push_str("include!(\"");
+                        buf.push_str(&output_filename);
+                        buf.push_str("\");\n");
+                    }) {
+                        res.push(f);
+                    }
+                }
+
+                let out_dir = request.output_dir();
+                res.push(File {
+                    name: Some(out_dir + &output_filename),
+                    content: Some(content),
+                    ..File::default()
+                });
+
+                Some(res)
+            })
+            .flatten()
+            .map(Ok)
+            .collect()
     }
 }

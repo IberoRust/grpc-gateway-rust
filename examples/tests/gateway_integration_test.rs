@@ -3,7 +3,7 @@ use gateway_examples::examplepb::a_bit_of_everything_service_server::{
     ABitOfEverythingService, ABitOfEverythingServiceServer,
 };
 use gateway_examples::examples::internal::proto::sub::StringMessage;
-use gateway_examples::gateway::ABitOfEverythingServiceRegistration;
+use gateway_examples::examplepb::a_bit_of_everything_service_gw::ABitOfEverythingServiceRegistration;
 use gateway_examples::google;
 use gateway_runtime::codec::MultimediaCodec;
 use gateway_runtime::router::Router;

@@ -1,6 +1,6 @@
 [package]
 name = "protoc-gen-grpc-gateway"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "A protoc plugin that generates a gRPC-Gateway proxy in Rust."
 license = "Apache-2.0"
@@ -15,14 +15,16 @@ path = "src/lib.rs"
 
 [dependencies]
 prost = "0.14"
-gateway-annotations = { version = "0.1.1", path = "../gateway-annotations" }
-gateway-internal = { version = "0.1.1", path = "../gateway-internal" }
+gateway-annotations = { version = "0.1.2", path = "../gateway-annotations" }
+gateway-internal = { version = "0.1.2", path = "../gateway-internal" }
 
 quote = "1.0"
 proc-macro2 = "1.0"
 heck = "0.5"
 syn = { version = "2.0", features = ["full", "parsing"] }
 prettyplease = "0.2"
+protoc-gen-prost = "0.5.0"
+prost-types = "0.14.3"
 
 [[bin]]
 name = "protoc-gen-grpc-gateway"

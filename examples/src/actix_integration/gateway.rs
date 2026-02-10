@@ -1,6 +1,6 @@
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use gateway_examples::examplepb::a_bit_of_everything_service_client::ABitOfEverythingServiceClient;
-use gateway_examples::gateway::ABitOfEverythingServiceRegistration;
+use gateway_examples::examplepb::a_bit_of_everything_service_gw::ABitOfEverythingServiceRegistration;
 use gateway_runtime::codec::JsonCodec;
 use gateway_runtime::router::Router;
 use gateway_runtime::utilities::SyncService;

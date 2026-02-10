@@ -1,5 +1,5 @@
 use gateway_examples::examplepb::a_bit_of_everything_service_client::ABitOfEverythingServiceClient;
-use gateway_examples::gateway::ABitOfEverythingServiceRegistration;
+use gateway_examples::examplepb::a_bit_of_everything_service_gw::ABitOfEverythingServiceRegistration;
 use gateway_runtime::codec::JsonCodec;
 use gateway_runtime::router::Router;
 use gateway_runtime::tower::Service;
@@ -95,9 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             println!("Load Balanced Request: {} {}", method, path);
 
-                            if let Some((service, params, _meta)) =
-                                router.match_request(&method, &path)
-                            {
+                            if let Some((service, params, _meta)) = router.match_request(&method, &path) {
                                 let mut service = service.get().clone();
                                 parts.extensions.insert(params);
                                 let gateway_req = GatewayRequest::from_parts(parts, body_vec);

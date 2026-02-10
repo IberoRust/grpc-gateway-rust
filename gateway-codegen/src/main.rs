@@ -1,127 +1,72 @@
-use gateway_annotations::google::protobuf_custom::compiler::code_generator_response::File;
-use gateway_annotations::google::protobuf_custom::compiler::{
-    CodeGeneratorRequest, CodeGeneratorResponse,
-};
-use gateway_codegen::{descriptor_processor, generator};
-use proc_macro2::Span;
+use gateway_annotations::google::protobuf_custom::compiler::CodeGeneratorRequest as CustomCodeGeneratorRequest;
+use gateway_codegen::generator::GrpcGatewayGenerator;
 use prost::Message;
+use prost_types::compiler::{CodeGeneratorRequest, CodeGeneratorResponse};
+use protoc_gen_prost::{Generator, ModuleRequestSet};
+use std::collections::HashMap;
+use std::env;
 use std::io::{self, Read, Write};
-use syn::Ident;
+use std::process::exit;
 
 fn main() -> io::Result<()> {
+    if env::args().any(|x| x == "--version") {
+        println!(env!("CARGO_PKG_VERSION"));
+        exit(0);
+    }
+
     let mut buf = Vec::new();
     io::stdin().read_to_end(&mut buf)?;
 
-    let request = CodeGeneratorRequest::decode(&buf[..])
+    // Parse with gateway_annotations to get rich descriptors (with extensions) and parameters
+    let rich_request = CustomCodeGeneratorRequest::decode(&buf[..])
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-    let mut response_files = Vec::new();
+    let mut source_relative = true;
+    let mut no_include = false;
 
-    let registry = descriptor_processor::SymbolRegistry::new(&request.proto_file);
-
-    for proto_file in &request.proto_file {
-        if request
-            .file_to_generate
-            .contains(&proto_file.name.clone().unwrap_or_default())
-        {
-            let services = match descriptor_processor::process_file(proto_file, &registry) {
-                Ok(s) => s,
-                Err(e) => {
-                    let response = CodeGeneratorResponse {
-                        error: Some(e),
-                        ..Default::default()
-                    };
-                    let mut out_buf = Vec::new();
-                    response
-                        .encode(&mut out_buf)
-                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-                    io::stdout().write_all(&out_buf)?;
-                    return Ok(());
-                }
-            };
-
-            let mut file_tokens = quote::quote! {};
-
-            // Generate each service with an English comment separator
-            for svc in &services {
-                let svc_tokens = generator::generate_service(svc);
-                file_tokens.extend(svc_tokens);
-
-                // Add English comment separator between services
-                file_tokens.extend(quote::quote! {
-                    // ------------------ Service Separator ------------------
-                });
+    if let Some(params) = &rich_request.parameter {
+        for param in params.split(',') {
+            let p = param.trim();
+            if p == "paths=source_relative" {
+                source_relative = true;
+            } else if p == "paths=import" {
+                source_relative = false;
+            } else if p == "no_include" || p == "no_include=true" {
+                no_include = true;
             }
-
-            let output_name = if let Some(package) = &proto_file.package {
-                format!("{}.gw.rs", package)
-            } else {
-                proto_file
-                    .name
-                    .clone()
-                    .unwrap_or_default()
-                    .replace(".proto", ".gw.rs")
-            };
-
-            let mod_name_str = if let Some(package) = &proto_file.package {
-                package.replace('.', "_")
-            } else {
-                output_name
-                    .replace(".gw.rs", "")
-                    .replace(|c: char| !c.is_ascii_alphanumeric() && c != '_', "_")
-            };
-
-            let mod_name = Ident::new(&mod_name_str, Span::call_site());
-
-            let final_tokens = quote::quote! {
-                pub use self::#mod_name::*;
-
-                pub mod #mod_name {
-                    #![allow(clippy::all)]
-                    #![allow(dead_code)]
-                    #![allow(unused)]
-
-                    use super::*;
-
-                    #file_tokens
-                }
-            };
-
-            // Parse AST
-            let syntax_tree: syn::File = syn::parse2(final_tokens.clone()).map_err(|e| {
-                eprintln!("Failed to parse generated code: {}", e);
-                eprintln!("Generated code:\n{}", final_tokens);
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Failed to parse generated code: {}", e),
-                )
-            })?;
-
-            // Format with prettyplease for proper indentation
-            let formatted_content = prettyplease::unparse(&syntax_tree);
-
-            let version = env!("CARGO_PKG_VERSION");
-            let content = format!(
-                "// This file is @generated by protoc-gen-grpc-gateway-rust version-{}.\n\n{}",
-                version, formatted_content
-            );
-
-            // let output_name = proto_file
-            //     .name
-            //     .clone()
-            //     .unwrap_or_default()
-            //     .replace(".proto", ".rs");
-
-            response_files.push(File {
-                name: Some(output_name),
-                content: Some(content),
-                ..Default::default()
-            });
         }
     }
 
+    let mut file_map = HashMap::new();
+    for file in rich_request.proto_file {
+        if let Some(name) = &file.name {
+            file_map.insert(name.clone(), file);
+        }
+    }
+
+    // Parse with prost_types for protoc-gen-prost compatibility (lean)
+    let request = CodeGeneratorRequest::decode(&buf[..])
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+    let module_request_set = ModuleRequestSet::new(
+        request.file_to_generate,
+        request.proto_file,
+        &buf,
+        None,
+        !source_relative,
+    )
+    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+    let mut generator = GrpcGatewayGenerator::new(file_map);
+    generator.source_relative = source_relative;
+    generator.no_include = no_include;
+
+    let files = generator.generate(&module_request_set).map_err(|e| {
+        io::Error::new(io::ErrorKind::Other, e.to_string())
+    })?;
+
     let response = CodeGeneratorResponse {
-        file: response_files,
+        file: files,
         supported_features: Some(1), // FEATURE_PROTO3_OPTIONAL
         ..Default::default()
     };

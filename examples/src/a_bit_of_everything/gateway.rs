@@ -3,10 +3,11 @@ use gateway_examples::examplemultipart::stored_file_service_client::StoredFileSe
 use gateway_examples::examplepb::a_bit_of_everything_service_client::ABitOfEverythingServiceClient;
 use gateway_examples::examplepb::camel_case_service_name_client::CamelCaseServiceNameClient;
 use gateway_examples::examplepb::snake_enum_service_client::SnakeEnumServiceClient;
-use gateway_examples::gateway::StoredFileServiceRegistration;
-use gateway_examples::gateway::{
-    ABitOfEverythingServiceRegistration, CamelCaseServiceNameRegistration,
-    SnakeEnumServiceRegistration,
+use gateway_examples::examplemultipart::stored_file_service_gw::StoredFileServiceRegistration;
+use gateway_examples::examplepb::{
+    a_bit_of_everything_service_gw::ABitOfEverythingServiceRegistration,
+    camel_case_service_name_gw::CamelCaseServiceNameRegistration,
+    snake_enum_service_gw::SnakeEnumServiceRegistration,
 };
 
 use gateway_runtime::codec::{JsonCodec, MultimediaCodec, ProtobufCodec};
@@ -132,9 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 body_vec.len()
                             );
 
-                            if let Some((service, params, _meta)) =
-                                router.match_request(&method, &path)
-                            {
+                            if let Some((service, params, _meta)) = router.match_request(&method, &path) {
                                 // Acquire the service from the Sync wrapper
                                 let mut service = service.get().clone();
 

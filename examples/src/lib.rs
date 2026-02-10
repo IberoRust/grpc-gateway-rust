@@ -27,6 +27,10 @@ pub mod grpc {
                 pub mod proto {
                     pub mod examplepb {
                         tonic::include_proto!("grpc.gateway.examples.internal.proto.examplepb");
+                        include!(concat!(
+                            env!("OUT_DIR"),
+                            "/gateway/grpc/gateway/examples/internal/proto/examplepb/grpc.gateway.examples.internal.proto.examplepb.gw.rs"
+                        ));
                     }
                     pub mod sub {
                         tonic::include_proto!("grpc.gateway.examples.internal.proto.sub");
@@ -44,26 +48,15 @@ pub mod grpc {
                         tonic::include_proto!(
                             "grpc.gateway.examples.internal.proto.examplemultipar"
                         );
+                        include!(concat!(
+                            env!("OUT_DIR"),
+                            "/gateway/grpc/gateway/examples/internal/proto/examplemultipar/grpc.gateway.examples.internal.proto.examplemultipar.gw.rs"
+                        ));
                     }
                 }
             }
         }
     }
-}
-
-pub mod gateway {
-    use crate::google;
-    use crate::grpc;
-
-    // Make grpc available to generated code // Make google available to generated code
-    include!(concat!(
-        env!("OUT_DIR"),
-        "/gateway/grpc.gateway.examples.internal.proto.examplepb.gw.rs"
-    ));
-    include!(concat!(
-        env!("OUT_DIR"),
-        "/gateway/grpc.gateway.examples.internal.proto.examplemultipar.gw.rs"
-    ));
 }
 
 pub mod examplepb {

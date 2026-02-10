@@ -5,7 +5,7 @@ use gateway_examples::examplemultipart::stored_file_service_server::{
 use gateway_examples::examplemultipart::{
     CreateFileRequest, DownloadStoredFileRequest, StoredFile,
 };
-use gateway_examples::gateway::StoredFileServiceRegistration;
+use gateway_examples::examplemultipart::stored_file_service_gw::StoredFileServiceRegistration;
 use gateway_examples::google::api::HttpBody;
 
 use gateway_runtime::codec::MultimediaCodec;

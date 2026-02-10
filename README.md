@@ -157,7 +157,11 @@ fn main() {
         // 2. Configure the Gateway Plugin
         .protoc_arg("--experimental_allow_proto3_optional")
         .protoc_arg(format!("--plugin=protoc-gen-grpc-gateway-rust={}", plugin_path.display()))
+        // The generator now defaults to source_relative=true, matching tonic behavior
         .protoc_arg(format!("--grpc-gateway-rust_out={}", out_dir.join("gateway").display()))
+        // Options:
+        // --grpc-gateway-rust_opt=paths=import (disable source_relative)
+        // --grpc-gateway-rust_opt=no_include (disable mod.rs include! generation)
 
         // 3. Compile
         .compile_protos(&["proto/service.proto"], &["proto/"])
@@ -178,8 +182,14 @@ use tonic::transport::Channel;
 pub mod pb {
     tonic::include_proto!("example");
     // Include the gateway generated code
-    // The file name is based on the proto package name (e.g. package example -> example.gw.rs)
-    include!(concat!(env!("OUT_DIR"), "/gateway/example.gw.rs"));
+    // The plugin now generates a mod.rs with include! macros automatically if source_relative is enabled (default)
+    // You can also include the generated file directly if preferred.
+
+    // Example assuming typical output structure in OUT_DIR/gateway/example/
+    // include!(concat!(env!("OUT_DIR"), "/gateway/example/mod.rs"));
+
+    // Or direct include of the gateway file:
+    include!(concat!(env!("OUT_DIR"), "/gateway/example/example.gw.rs"));
 }
 
 #[tokio::main]
@@ -192,8 +202,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut router = Router::new();
 
     // 3. Register the service
-    // The generator creates `{ServiceName}Registration`
-    pb::GreeterRegistration::register_greeter(&mut router, client, JsonCodec);
+    // The generator creates `{ServiceName}Registration` within the service module `{service_name}_gw`
+    pb::example::greeter_gw::GreeterRegistration::register_greeter(&mut router, client, JsonCodec);
 
     // 4. Create the Gateway Service with secure defaults
     // This adds standard middleware (Error handling, Request ID, etc.)
