@@ -1,6 +1,6 @@
 [package]
 name = "gateway-annotations"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Annotations for the Rust gRPC Gateway."
 license = "Apache-2.0"

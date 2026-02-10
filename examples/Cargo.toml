@@ -1,10 +1,10 @@
 [package]
 name = "gateway-examples"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 [dependencies]
-gateway-runtime = { path = "../gateway-runtime", version = "0.2.0" }
+gateway-runtime = { path = "../gateway-runtime", version = "0.2.1" }
 tonic = "0.14"
 prost = "0.14"
 tokio = { version = "1.49", features = ["full"] }
@@ -16,7 +16,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 tonic-prost = "0.14"
-gateway-internal = { version = "0.1.1", path = "../gateway-internal" }
+gateway-internal = { version = "0.1.2", path = "../gateway-internal" }
 tokio-stream = "0.1"
 actix-web = "4.5"
 bytes = "1.11"
