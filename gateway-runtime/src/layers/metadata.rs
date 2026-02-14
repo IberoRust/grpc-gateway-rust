@@ -122,13 +122,19 @@ mod tests {
         let service = tower::service_fn(|req: GatewayRequest| async move {
             let md = req.extensions().get::<MetadataMap>().unwrap();
             assert_eq!(md.get("x-test").unwrap(), "value");
-            Ok::<GatewayResponse, GatewayError>(http::Response::new(
-                BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))
-            ))
+            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(
+                Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+            )))
         });
 
-        let mut layer = MetadataLayer::new(service, vec![annotator], MetadataForwardingConfig::default());
-        let req = http::Request::builder().body(crate::alloc::vec::Vec::new()).unwrap();
+        let mut layer = MetadataLayer::new(
+            service,
+            vec![annotator],
+            MetadataForwardingConfig::default(),
+        );
+        let req = http::Request::builder()
+            .body(crate::alloc::vec::Vec::new())
+            .unwrap();
 
         layer.call(req).await.unwrap();
     }
@@ -150,11 +156,16 @@ mod tests {
             let md = req.extensions().get::<MetadataMap>().unwrap();
             assert_eq!(md.get("k1").unwrap(), "v1");
             assert_eq!(md.get("k2").unwrap(), "v2");
-            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))))
+            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(
+                Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+            )))
         });
 
-        let mut layer = MetadataLayer::new(service, vec![a1, a2], MetadataForwardingConfig::default());
-        let req = http::Request::builder().body(crate::alloc::vec::Vec::new()).unwrap();
+        let mut layer =
+            MetadataLayer::new(service, vec![a1, a2], MetadataForwardingConfig::default());
+        let req = http::Request::builder()
+            .body(crate::alloc::vec::Vec::new())
+            .unwrap();
 
         layer.call(req).await.unwrap();
     }
@@ -164,11 +175,15 @@ mod tests {
         let config = MetadataForwardingConfig::default(); // Assume default allows something or is empty
         let service = tower::service_fn(|req: GatewayRequest| async move {
             assert!(req.extensions().get::<MetadataForwardingConfig>().is_some());
-            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))))
+            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(
+                Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+            )))
         });
 
         let mut layer = MetadataLayer::new(service, vec![], config);
-        let req = http::Request::builder().body(crate::alloc::vec::Vec::new()).unwrap();
+        let req = http::Request::builder()
+            .body(crate::alloc::vec::Vec::new())
+            .unwrap();
 
         layer.call(req).await.unwrap();
     }

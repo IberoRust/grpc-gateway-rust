@@ -1,7 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::collections::HashMap;
     use quote::quote;
 
     // Mock resolve_type for testing since it uses syn::parse_str which might fail without context,

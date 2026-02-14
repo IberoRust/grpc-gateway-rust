@@ -44,7 +44,11 @@ pub struct TraceLayer<S> {
 
 impl<S> TraceLayer<S> {
     /// Creates a new `TraceLayer`.
-    pub fn new(inner: S, start: Option<TracingStartHandler>, end: Option<TracingEndHandler>) -> Self {
+    pub fn new(
+        inner: S,
+        start: Option<TracingStartHandler>,
+        end: Option<TracingEndHandler>,
+    ) -> Self {
         Self { inner, start, end }
     }
 }
@@ -106,11 +110,15 @@ mod tests {
         });
 
         let service = tower::service_fn(|_req: GatewayRequest| async {
-            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))))
+            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(
+                Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+            )))
         });
 
         let mut layer = TraceLayer::new(service, Some(start), Some(end));
-        let req = http::Request::builder().body(crate::alloc::vec::Vec::new()).unwrap();
+        let req = http::Request::builder()
+            .body(crate::alloc::vec::Vec::new())
+            .unwrap();
 
         layer.call(req).await.unwrap();
         assert_eq!(start_count.load(Ordering::SeqCst), 1);
@@ -120,11 +128,15 @@ mod tests {
     #[tokio::test]
     async fn test_trace_layer_no_handlers() {
         let service = tower::service_fn(|_req: GatewayRequest| async {
-            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))))
+            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(
+                Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+            )))
         });
 
         let mut layer = TraceLayer::new(service, None, None);
-        let req = http::Request::builder().body(crate::alloc::vec::Vec::new()).unwrap();
+        let req = http::Request::builder()
+            .body(crate::alloc::vec::Vec::new())
+            .unwrap();
 
         layer.call(req).await.unwrap();
     }

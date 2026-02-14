@@ -106,11 +106,15 @@ mod tests {
         });
 
         let service = tower::service_fn(|_req: GatewayRequest| async {
-            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))))
+            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(
+                Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+            )))
         });
 
         let mut layer = MetricsLayer::new(service, Some(recorder));
-        let req = http::Request::builder().body(crate::alloc::vec::Vec::new()).unwrap();
+        let req = http::Request::builder()
+            .body(crate::alloc::vec::Vec::new())
+            .unwrap();
 
         layer.call(req).await.unwrap();
         assert_eq!(count.load(Ordering::SeqCst), 1);
@@ -119,11 +123,15 @@ mod tests {
     #[tokio::test]
     async fn test_metrics_layer_no_recorder() {
         let service = tower::service_fn(|_req: GatewayRequest| async {
-            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))))
+            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(
+                Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+            )))
         });
 
         let mut layer = MetricsLayer::new(service, None);
-        let req = http::Request::builder().body(crate::alloc::vec::Vec::new()).unwrap();
+        let req = http::Request::builder()
+            .body(crate::alloc::vec::Vec::new())
+            .unwrap();
 
         layer.call(req).await.unwrap();
         // Should not crash

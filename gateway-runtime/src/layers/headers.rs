@@ -117,7 +117,9 @@ mod tests {
         let service = tower::service_fn(|req: GatewayRequest| async move {
             assert!(req.headers().contains_key("x-allowed"));
             assert!(!req.headers().contains_key("x-forbidden"));
-            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))))
+            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(
+                Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+            )))
         });
 
         let mut layer = HeaderLayer::new(service, Some(matcher), None);
@@ -143,7 +145,9 @@ mod tests {
         let service = tower::service_fn(|req: GatewayRequest| async move {
             assert!(req.headers().contains_key("new-name"));
             assert!(!req.headers().contains_key("old-name"));
-            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))))
+            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(
+                Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+            )))
         });
 
         let mut layer = HeaderLayer::new(service, Some(matcher), None);
@@ -168,15 +172,22 @@ mod tests {
         });
 
         let service = tower::service_fn(|_req: GatewayRequest| async {
-            let mut resp = http::Response::new(BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!())));
-            resp.headers_mut().insert("x-secret", "shhh".parse().unwrap());
-            resp.headers_mut().insert("x-internal", "val".parse().unwrap());
-            resp.headers_mut().insert("content-type", "application/json".parse().unwrap());
+            let mut resp = http::Response::new(BodyExt::boxed_unsync(
+                Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+            ));
+            resp.headers_mut()
+                .insert("x-secret", "shhh".parse().unwrap());
+            resp.headers_mut()
+                .insert("x-internal", "val".parse().unwrap());
+            resp.headers_mut()
+                .insert("content-type", "application/json".parse().unwrap());
             Ok::<GatewayResponse, GatewayError>(resp)
         });
 
         let mut layer = HeaderLayer::new(service, None, Some(matcher));
-        let req = http::Request::builder().body(crate::alloc::vec::Vec::new()).unwrap();
+        let req = http::Request::builder()
+            .body(crate::alloc::vec::Vec::new())
+            .unwrap();
 
         let resp = layer.call(req).await.unwrap();
         assert!(!resp.headers().contains_key("x-secret"));

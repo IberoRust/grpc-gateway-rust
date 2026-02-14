@@ -1,9 +1,8 @@
 #[cfg(test)]
 mod tests {
-
     use gateway_runtime::gateway::Gateway;
-    use gateway_runtime::router::Router;
     use gateway_runtime::layers::health::HealthCheckConfig;
+    use gateway_runtime::router::Router;
     use http::{Request, StatusCode};
     use tower::ServiceExt;
 
@@ -12,7 +11,13 @@ mod tests {
     #[tokio::test]
     async fn test_gateway_health_check() {
         // Create a dummy router
-        let router: Router<tower::util::BoxCloneService<gateway_runtime::GatewayRequest, gateway_runtime::GatewayResponse, gateway_runtime::GatewayError>> = Router::new();
+        let router: Router<
+            tower::util::BoxCloneService<
+                gateway_runtime::GatewayRequest,
+                gateway_runtime::GatewayResponse,
+                gateway_runtime::GatewayError,
+            >,
+        > = Router::new();
 
         let config = HealthCheckConfig {
             liveness_path: "/healthz".to_string(),
@@ -20,16 +25,12 @@ mod tests {
             ..Default::default()
         };
 
-        let gateway = Gateway::new(router)
-            .with_health_check(config);
+        let gateway = Gateway::new(router).with_health_check(config);
 
         let service = gateway.into_service();
 
         // Test Liveness
-        let req = Request::builder()
-            .uri("/healthz")
-            .body(Vec::new())
-            .unwrap();
+        let req = Request::builder().uri("/healthz").body(Vec::new()).unwrap();
 
         let resp = service.clone().oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -40,10 +41,7 @@ mod tests {
         assert!(body_str.contains("SERVING"));
 
         // Test Readiness
-        let req = Request::builder()
-            .uri("/readyz")
-            .body(Vec::new())
-            .unwrap();
+        let req = Request::builder().uri("/readyz").body(Vec::new()).unwrap();
 
         let resp = service.clone().oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);

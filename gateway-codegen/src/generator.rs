@@ -10,7 +10,7 @@ use gateway_internal::path_template::OpCode;
 use heck::{ToPascalCase, ToSnakeCase};
 use proc_macro2::{Ident, Span, TokenStream};
 use prost_types::compiler::code_generator_response::File;
-use protoc_gen_prost::{Generator, ModuleRequest, ModuleRequestSet, Result};
+use protoc_gen_prost::{Generator, ModuleRequestSet, Result};
 use quote::{format_ident, quote};
 use std::collections::HashMap;
 
@@ -38,12 +38,10 @@ fn resolve_relative_type(
     current_package: &str,
     options: &GeneratorOptions,
 ) -> TokenStream {
-    let source_relative = options.source_relative;
-
     // Check extern paths first
-    if let Some(extern_path) = options.extern_paths.iter()
-        .find(|(proto_path, _)| type_name == *proto_path || type_name.starts_with(&format!("{}.", proto_path)))
-    {
+    if let Some(extern_path) = options.extern_paths.iter().find(|(proto_path, _)| {
+        type_name == *proto_path || type_name.starts_with(&format!("{}.", proto_path))
+    }) {
         let (proto_prefix, rust_prefix) = extern_path;
         // Replace the prefix
         // e.g. type_name = ".google.protobuf.Timestamp"
@@ -51,8 +49,10 @@ fn resolve_relative_type(
         // result = "::pbjson_types::Timestamp"
 
         // Handle exact match
-        if type_name == *proto_prefix || type_name.trim_start_matches('.') == proto_prefix.trim_start_matches('.') {
-             return resolve_type(rust_prefix);
+        if type_name == *proto_prefix
+            || type_name.trim_start_matches('.') == proto_prefix.trim_start_matches('.')
+        {
+            return resolve_type(rust_prefix);
         }
 
         // Handle prefix match
@@ -61,10 +61,10 @@ fn resolve_relative_type(
         let clean_proto = proto_prefix.trim_start_matches('.');
 
         if clean_type.starts_with(clean_proto) {
-             let suffix = &clean_type[clean_proto.len()..]; // e.g. ".Timestamp" or just "Timestamp" if separator is handled
-             // If suffix starts with '.', replace with '::' and append to rust_prefix
-             let resolved = format!("{}{}", rust_prefix, suffix.replace('.', "::"));
-             return resolve_type(&resolved);
+            let suffix = &clean_type[clean_proto.len()..]; // e.g. ".Timestamp" or just "Timestamp" if separator is handled
+                                                           // If suffix starts with '.', replace with '::' and append to rust_prefix
+            let resolved = format!("{}{}", rust_prefix, suffix.replace('.', "::"));
+            return resolve_type(&resolved);
         }
     }
 
@@ -74,7 +74,10 @@ fn resolve_relative_type(
     }
 
     let type_path = type_name.trim_start_matches('.');
-    let current_parts: Vec<&str> = current_package.split('.').filter(|s| !s.is_empty()).collect();
+    let current_parts: Vec<&str> = current_package
+        .split('.')
+        .filter(|s| !s.is_empty())
+        .collect();
     let type_parts: Vec<&str> = type_path.split('.').filter(|s| !s.is_empty()).collect();
 
     let mut common_prefix_len = 0;
@@ -273,11 +276,7 @@ pub fn generate_service(service: &ServiceDefinition, options: &GeneratorOptions)
     let mut registration_logic: Vec<TokenStream> = Vec::new();
     for method in &service.methods {
         let method_name = format_ident!("{}", method.name.to_snake_case());
-        let input_type = resolve_relative_type(
-            &method.input_type,
-            &service.package,
-            options,
-        );
+        let input_type = resolve_relative_type(&method.input_type, &service.package, options);
 
         for binding in &method.bindings {
             let http_method_ident = format_ident!("{}", binding.http_method);
@@ -439,7 +438,8 @@ pub struct GrpcGatewayGenerator {
     pub no_include: bool,
     pub source_relative: bool,
     pub extern_paths: HashMap<String, String>,
-    pub file_map: HashMap<String, gateway_annotations::google::protobuf_custom::FileDescriptorProto>,
+    pub file_map:
+        HashMap<String, gateway_annotations::google::protobuf_custom::FileDescriptorProto>,
 }
 
 impl GrpcGatewayGenerator {
@@ -467,16 +467,18 @@ impl Generator for GrpcGatewayGenerator {
         };
 
         // Initialize symbol registry from input files using the rich descriptors
-        let protos: Vec<gateway_annotations::google::protobuf_custom::FileDescriptorProto> = self.file_map.values().cloned().collect();
+        let protos: Vec<gateway_annotations::google::protobuf_custom::FileDescriptorProto> =
+            self.file_map.values().cloned().collect();
         let registry = descriptor_processor::SymbolRegistry::new(&protos);
 
         module_request_set
             .requests()
-            .filter_map(|(module, request)| {
+            .filter_map(|(_module, request)| {
                 let output_filename = format!("{}.gw.rs", request.proto_package_name());
 
                 // Aggregate all files in this request (which maps to one package)
-                let services: Vec<_> = request.files()
+                let services: Vec<_> = request
+                    .files()
                     .flat_map(|file| {
                         // Look up the rich file descriptor using the name
                         let file_name = file.name.as_deref().unwrap_or_default();
@@ -522,8 +524,8 @@ impl Generator for GrpcGatewayGenerator {
                 };
 
                 let syntax_tree: syn::File = match syn::parse2(final_tokens) {
-                     Ok(f) => f,
-                     Err(e) => panic!("Failed to parse generated code: {}", e),
+                    Ok(f) => f,
+                    Err(e) => panic!("Failed to parse generated code: {}", e),
                 };
                 let formatted_content = prettyplease::unparse(&syntax_tree);
                 let version = env!("CARGO_PKG_VERSION");
@@ -535,7 +537,7 @@ impl Generator for GrpcGatewayGenerator {
                 let mut res = Vec::new();
 
                 if !self.no_include {
-                     if let Some(f) = request.append_to_file(|buf| {
+                    if let Some(f) = request.append_to_file(|buf| {
                         buf.push_str("include!(\"");
                         buf.push_str(&output_filename);
                         buf.push_str("\");\n");
@@ -567,7 +569,10 @@ mod tests {
     #[test]
     fn test_resolve_relative_type_extern_path_exact() {
         let mut extern_paths = HashMap::new();
-        extern_paths.insert(".google.protobuf.Timestamp".to_string(), "::pbjson_types::Timestamp".to_string());
+        extern_paths.insert(
+            ".google.protobuf.Timestamp".to_string(),
+            "::pbjson_types::Timestamp".to_string(),
+        );
 
         let options = GeneratorOptions {
             source_relative: true,

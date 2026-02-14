@@ -59,9 +59,9 @@ fn main() -> io::Result<()> {
     generator.source_relative = source_relative;
     generator.no_include = no_include;
 
-    let files = generator.generate(&module_request_set).map_err(|e| {
-        io::Error::new(io::ErrorKind::Other, e.to_string())
-    })?;
+    let files = generator
+        .generate(&module_request_set)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
     let response = CodeGeneratorResponse {
         file: files,

@@ -84,7 +84,7 @@ impl tower::retry::Policy<GatewayRequest, GatewayResponse, GatewayError> for Gat
             Err(GatewayError::Upstream(_)) => {
                 self.remaining_attempts -= 1;
                 Some(futures::future::ready(()))
-            },
+            }
             Err(_) => None,
         }
     }
@@ -172,7 +172,8 @@ where
                 };
 
                 // Re-box safely
-                let boxed_body = http_body_util::combinators::UnsyncBoxBody::new(Box::new(limited_body));
+                let boxed_body =
+                    http_body_util::combinators::UnsyncBoxBody::new(Box::new(limited_body));
                 Ok(http::Response::from_parts(parts, boxed_body))
             } else {
                 Ok(resp)
@@ -226,9 +227,9 @@ mod tests {
     #[tokio::test]
     async fn test_req_body_limit_exceeded() {
         let service = tower::service_fn(|_| async {
-            Ok::<GatewayResponse, GatewayError>(http::Response::new(
-                BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))
-            ))
+            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(
+                Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+            )))
         });
 
         let mut layer = BodyLimitLayer::new(service, Some(5), None);
@@ -247,9 +248,9 @@ mod tests {
     #[tokio::test]
     async fn test_req_body_limit_ok() {
         let service = tower::service_fn(|_| async {
-            Ok::<GatewayResponse, GatewayError>(http::Response::new(
-                BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))
-            ))
+            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(
+                Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+            )))
         });
 
         let mut layer = BodyLimitLayer::new(service, Some(15), None);
@@ -264,9 +265,12 @@ mod tests {
         {
             let mut policy = GatewayRetryPolicy::new(1);
             let mut req = http::Request::builder().body(Vec::new()).unwrap();
-            let mut resp_res: Result<GatewayResponse, GatewayError> = Ok(http::Response::builder().status(StatusCode::SERVICE_UNAVAILABLE).body(
-                 BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))
-            ).unwrap());
+            let mut resp_res: Result<GatewayResponse, GatewayError> = Ok(http::Response::builder()
+                .status(StatusCode::SERVICE_UNAVAILABLE)
+                .body(BodyExt::boxed_unsync(
+                    Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+                ))
+                .unwrap());
 
             assert!(policy.retry(&mut req, &mut resp_res).is_some());
         }
@@ -275,9 +279,13 @@ mod tests {
         {
             let mut policy = GatewayRetryPolicy::new(1);
             let mut req = http::Request::builder().body(Vec::new()).unwrap();
-            let mut resp_ok_res: Result<GatewayResponse, GatewayError> = Ok(http::Response::builder().status(StatusCode::OK).body(
-                 BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))
-            ).unwrap());
+            let mut resp_ok_res: Result<GatewayResponse, GatewayError> =
+                Ok(http::Response::builder()
+                    .status(StatusCode::OK)
+                    .body(BodyExt::boxed_unsync(
+                        Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+                    ))
+                    .unwrap());
             assert!(policy.retry(&mut req, &mut resp_ok_res).is_none());
         }
 

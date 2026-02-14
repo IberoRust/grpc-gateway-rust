@@ -48,8 +48,8 @@ use percent_encoding::percent_decode_str;
 use std::future::Future;
 use std::pin::Pin;
 use tonic::metadata::MetadataMap;
-use tower::{Service, ServiceBuilder};
 use tower::util::{MapErrLayer, MapRequestLayer, MapResponseLayer};
+use tower::{Service, ServiceBuilder};
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer as HttpTraceLayer;
@@ -334,9 +334,11 @@ where
         // These layers operate on `GatewayRequest` (i.e., `Request<Vec<u8>>`).
         // Retry must happen here because it needs to clone the request (which is cheap-ish for Vec<u8> vs streams).
         let inner_service = ServiceBuilder::new()
-            .option_layer(self.governance_config.retry_count.map(|count| {
-                tower::retry::RetryLayer::new(GatewayRetryPolicy::new(count))
-            }))
+            .option_layer(
+                self.governance_config
+                    .retry_count
+                    .map(|count| tower::retry::RetryLayer::new(GatewayRetryPolicy::new(count))),
+            )
             .layer_fn(|inner| TraceLayer {
                 inner,
                 start: self.tracing_start.clone(),
@@ -363,11 +365,13 @@ where
                 )
             })
             // Manually constructed layers must be added via layer_fn or wrapper struct if they implement Service directly
-            .layer_fn(|inner| BodyLimitLayer::new(
-                inner,
-                self.governance_config.max_request_body_size,
-                self.governance_config.max_response_body_size,
-            ))
+            .layer_fn(|inner| {
+                BodyLimitLayer::new(
+                    inner,
+                    self.governance_config.max_request_body_size,
+                    self.governance_config.max_response_body_size,
+                )
+            })
             .service(router_service);
 
         // 2. Build the middle stack (Governance + Adapters + TowerHTTP)
@@ -379,10 +383,8 @@ where
         let governed_stack = ServiceBuilder::new()
             // Map BoxError (from Governance) back to GatewayError
             .layer(MapErrLayer::new(box_error_to_gateway_error))
-
             // Buffer the governance stack. This returns a service that produces BoxError.
             .layer(tower::buffer::BufferLayer::new(1024))
-
             // Governance Layers (LoadShed / RateLimit / Timeout / Concurrency) - Return BoxError
             // Order: LoadShed (fastest) -> RateLimit -> Concurrency -> Timeout
             .option_layer(if self.governance_config.enable_load_shedding {
@@ -391,27 +393,28 @@ where
                 None
             })
             .option_layer(self.governance_config.rate_limit_per_second.map(|rps| {
-                tower::limit::RateLimitLayer::new(
-                    rps,
-                    core::time::Duration::from_secs(1)
-                )
+                tower::limit::RateLimitLayer::new(rps, core::time::Duration::from_secs(1))
             }))
-            .option_layer(self.governance_config.connection_limit.map(tower::limit::GlobalConcurrencyLimitLayer::new))
-            .option_layer(self.governance_config.request_timeout.map(tower::timeout::TimeoutLayer::new))
-
+            .option_layer(
+                self.governance_config
+                    .connection_limit
+                    .map(tower::limit::GlobalConcurrencyLimitLayer::new),
+            )
+            .option_layer(
+                self.governance_config
+                    .request_timeout
+                    .map(tower::timeout::TimeoutLayer::new),
+            )
             // Map GatewayError to BoxError (Required for Governance layers that expect standard Error trait)
             // Note: We use a function pointer to ensure the layer is Clone.
             .layer(MapErrLayer::new(gateway_error_to_box_error))
-
             // Adapt Request<Vec<u8>> -> Request<VecBody> for TowerHTTP
             .layer(MapRequestLayer::new(|req: GatewayRequest| {
                 req.map(|v| VecBody(Some(v)))
             }))
-
             // Tower HTTP Layers
             .layer(HttpTraceLayer::new_for_http())
             .option_layer(self.cors_layer)
-
             // Adapt Request<VecBody> -> Request<Vec<u8>> for Inner Service
             .layer_fn(VecBodyToVecService::new)
             .service(inner_service);
@@ -443,7 +446,7 @@ where
         let service_with_health = if let Some(config) = self.health_check_config {
             let (reporter, _) = tonic_health::server::health_reporter();
             let health_layer = tower::layer::layer_fn(move |inner| {
-                 HealthService::new(inner, reporter.clone(), config.clone())
+                HealthService::new(inner, reporter.clone(), config.clone())
             });
 
             let svc = ServiceBuilder::new()
@@ -677,8 +680,8 @@ mod tests {
     #[tokio::test]
     async fn test_gateway_cors() {
         let router = make_router();
-        let cors =
-            CorsLayer::new().allow_origin("http://example.com".parse::<http::HeaderValue>().unwrap());
+        let cors = CorsLayer::new()
+            .allow_origin("http://example.com".parse::<http::HeaderValue>().unwrap());
         let gateway = Gateway::new(router).with_cors(cors);
 
         let service = gateway.into_service();

@@ -97,17 +97,20 @@ mod tests {
     #[tokio::test]
     async fn test_response_layer_modifies() {
         let modifier: ResponseModifier = Arc::new(|_, resp| {
-            resp.headers_mut().insert("x-modified", "true".parse().unwrap());
+            resp.headers_mut()
+                .insert("x-modified", "true".parse().unwrap());
         });
 
         let service = tower::service_fn(|_req: GatewayRequest| async {
-            Ok::<GatewayResponse, GatewayError>(http::Response::new(
-                BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))
-            ))
+            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(
+                Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+            )))
         });
 
         let mut layer = ResponseLayer::new(service, vec![modifier]);
-        let req = http::Request::builder().body(crate::alloc::vec::Vec::new()).unwrap();
+        let req = http::Request::builder()
+            .body(crate::alloc::vec::Vec::new())
+            .unwrap();
 
         let resp = layer.call(req).await.unwrap();
         assert_eq!(resp.headers().get("x-modified").unwrap(), "true");
@@ -123,11 +126,15 @@ mod tests {
         });
 
         let service = tower::service_fn(|_req: GatewayRequest| async {
-            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))))
+            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(
+                Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+            )))
         });
 
         let mut layer = ResponseLayer::new(service, vec![m1, m2]);
-        let req = http::Request::builder().body(crate::alloc::vec::Vec::new()).unwrap();
+        let req = http::Request::builder()
+            .body(crate::alloc::vec::Vec::new())
+            .unwrap();
 
         let resp = layer.call(req).await.unwrap();
         assert_eq!(resp.headers().get("h1").unwrap(), "v1");
@@ -143,18 +150,25 @@ mod tests {
         });
 
         let service = tower::service_fn(|_req: GatewayRequest| async {
-            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))))
+            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(
+                Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+            )))
         });
 
         let mut layer = ResponseLayer::new(service, vec![modifier]);
 
         // Request with trigger
-        let req = http::Request::builder().header("x-trigger", "1").body(crate::alloc::vec::Vec::new()).unwrap();
+        let req = http::Request::builder()
+            .header("x-trigger", "1")
+            .body(crate::alloc::vec::Vec::new())
+            .unwrap();
         let resp = layer.call(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::ACCEPTED);
 
         // Request without trigger
-        let req = http::Request::builder().body(crate::alloc::vec::Vec::new()).unwrap();
+        let req = http::Request::builder()
+            .body(crate::alloc::vec::Vec::new())
+            .unwrap();
         let resp = layer.call(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
     }

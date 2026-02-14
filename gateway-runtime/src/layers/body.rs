@@ -113,10 +113,7 @@ where
 
     res.map(|b| {
         let b = b.map_err(|e| {
-            GatewayError::Custom(
-                http::StatusCode::INTERNAL_SERVER_ERROR,
-                e.to_string(),
-            )
+            GatewayError::Custom(http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
         });
         UnsyncBoxBody::new(b)
     })
@@ -176,9 +173,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_box_response_body_wrapping() {
-        let original_resp = http::Response::new(http_body_util::Full::new(
-            crate::bytes::Bytes::from("test"),
-        ));
+        let original_resp =
+            http::Response::new(http_body_util::Full::new(crate::bytes::Bytes::from("test")));
         let boxed_resp = box_response_body(original_resp);
 
         // Verify structure (opaque check mainly since BoxBody is generic)

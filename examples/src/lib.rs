@@ -28,8 +28,8 @@ pub mod grpc {
                     pub mod examplepb {
                         tonic::include_proto!("grpc.gateway.examples.internal.proto.examplepb");
                         include!(concat!(
-                            env!("OUT_DIR"),
-                            "/gateway/grpc/gateway/examples/internal/proto/examplepb/grpc.gateway.examples.internal.proto.examplepb.gw.rs"
+                        env!("OUT_DIR"),
+                        "/gateway/grpc/gateway/examples/internal/proto/examplepb/grpc.gateway.examples.internal.proto.examplepb.gw.rs"
                         ));
                     }
                     pub mod sub {
@@ -49,8 +49,8 @@ pub mod grpc {
                             "grpc.gateway.examples.internal.proto.examplemultipar"
                         );
                         include!(concat!(
-                            env!("OUT_DIR"),
-                            "/gateway/grpc/gateway/examples/internal/proto/examplemultipar/grpc.gateway.examples.internal.proto.examplemultipar.gw.rs"
+                        env!("OUT_DIR"),
+                        "/gateway/grpc/gateway/examples/internal/proto/examplemultipar/grpc.gateway.examples.internal.proto.examplemultipar.gw.rs"
                         ));
                     }
                 }

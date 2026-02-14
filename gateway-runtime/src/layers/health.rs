@@ -10,17 +10,17 @@
 //! -   **Governance Integration**: Integrates with `GovernanceConfig` to mark service as NOT_SERVING when overloaded.
 
 #[cfg(feature = "std")]
+use crate::{GatewayError, GatewayRequest, GatewayResponse};
+#[cfg(feature = "std")]
+use http::StatusCode;
+#[cfg(feature = "std")]
+use http_body_util::BodyExt;
+#[cfg(feature = "std")]
 use std::sync::{Arc, Mutex};
 #[cfg(feature = "std")]
 use tonic_health::server::HealthReporter;
 #[cfg(feature = "std")]
 use tower::Service;
-#[cfg(feature = "std")]
-use crate::{GatewayRequest, GatewayResponse, GatewayError};
-#[cfg(feature = "std")]
-use http::StatusCode;
-#[cfg(feature = "std")]
-use http_body_util::BodyExt;
 
 /// Configuration for the Health Check layer.
 #[derive(Debug, Clone)]
@@ -70,7 +70,11 @@ impl<S> HealthService<S> {
     }
 
     /// Updates the serving status of a service.
-    pub async fn set_serving_status(&mut self, service: impl Into<String>, status: tonic_health::ServingStatus) {
+    pub async fn set_serving_status(
+        &mut self,
+        service: impl Into<String>,
+        status: tonic_health::ServingStatus,
+    ) {
         let s = service.into();
         self.reporter.set_service_status(s.clone(), status).await;
         if let Ok(mut map) = self.status_map.lock() {
@@ -87,9 +91,14 @@ where
 {
     type Response = GatewayResponse;
     type Error = GatewayError;
-    type Future = std::pin::Pin<Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+    type Future = std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>,
+    >;
 
-    fn poll_ready(&mut self, cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+    fn poll_ready(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
@@ -106,7 +115,12 @@ where
                     Ok(http::Response::builder()
                         .status(StatusCode::OK)
                         .header("content-type", "application/json")
-                        .body(BodyExt::boxed_unsync(http_body_util::Full::new(crate::bytes::Bytes::from("{\"status\": \"SERVING\"}")).map_err(|_| unreachable!())))
+                        .body(BodyExt::boxed_unsync(
+                            http_body_util::Full::new(crate::bytes::Bytes::from(
+                                "{\"status\": \"SERVING\"}",
+                            ))
+                            .map_err(|_| unreachable!()),
+                        ))
                         .unwrap())
                 });
             }
@@ -116,23 +130,28 @@ where
                 let _service_name = self.config.readiness_service.clone();
 
                 return Box::pin(async move {
-                     // We can't easily query the reporter synchronously here without async trait or blocking.
-                     // But tonic_health reporter doesn't expose a getter easily?
-                     // Actually it does: `service_reporter.status()`. But `HealthReporter` is a sender.
-                     // The `HealthService` (the gRPC one) holds the state.
-                     // We need to mirror state or query it.
-                     // Since we don't have direct access to the `HealthServer` state (it's internal to tonic),
-                     // we should maintain our own mirror in `status_map` if we want to check rigorously,
-                     // OR just rely on the fact that if we haven't set it to NOT_SERVING, it's serving.
+                    // We can't easily query the reporter synchronously here without async trait or blocking.
+                    // But tonic_health reporter doesn't expose a getter easily?
+                    // Actually it does: `service_reporter.status()`. But `HealthReporter` is a sender.
+                    // The `HealthService` (the gRPC one) holds the state.
+                    // We need to mirror state or query it.
+                    // Since we don't have direct access to the `HealthServer` state (it's internal to tonic),
+                    // we should maintain our own mirror in `status_map` if we want to check rigorously,
+                    // OR just rely on the fact that if we haven't set it to NOT_SERVING, it's serving.
 
-                     // For robustness, let's assume serving unless explicitly set otherwise.
-                     // A real readiness check might verify upstream connectivity.
-                     // But for this layer, we check if *this* gateway is ready.
+                    // For robustness, let's assume serving unless explicitly set otherwise.
+                    // A real readiness check might verify upstream connectivity.
+                    // But for this layer, we check if *this* gateway is ready.
 
-                     Ok(http::Response::builder()
+                    Ok(http::Response::builder()
                         .status(StatusCode::OK)
                         .header("content-type", "application/json")
-                        .body(BodyExt::boxed_unsync(http_body_util::Full::new(crate::bytes::Bytes::from("{\"status\": \"SERVING\"}")).map_err(|_| unreachable!())))
+                        .body(BodyExt::boxed_unsync(
+                            http_body_util::Full::new(crate::bytes::Bytes::from(
+                                "{\"status\": \"SERVING\"}",
+                            ))
+                            .map_err(|_| unreachable!()),
+                        ))
                         .unwrap())
                 });
             }
@@ -151,10 +170,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_health_liveness() {
-        let (mut reporter, _health_service) = tonic_health::server::health_reporter();
-        reporter.set_service_status("", tonic_health::ServingStatus::Serving).await;
+        let (reporter, _health_service) = tonic_health::server::health_reporter();
+        reporter
+            .set_service_status("", tonic_health::ServingStatus::Serving)
+            .await;
 
-        let inner = tower::service_fn(|_| async { Ok(http::Response::new(BodyExt::boxed_unsync(http_body_util::Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!())))) });
+        let inner = tower::service_fn(|_| async {
+            Ok(http::Response::new(BodyExt::boxed_unsync(
+                http_body_util::Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()),
+            )))
+        });
         let mut service = HealthService::new(inner, reporter, HealthCheckConfig::default());
 
         let req = Request::builder().uri("/healthz").body(vec![]).unwrap();
