@@ -10,7 +10,7 @@ use gateway_internal::path_template::OpCode;
 use heck::{ToPascalCase, ToSnakeCase};
 use proc_macro2::{Ident, Span, TokenStream};
 use prost_types::compiler::code_generator_response::File;
-use protoc_gen_prost::{Generator, ModuleRequestSet, Result};
+use protoc_gen_prost::{Generator, ModuleRequest, ModuleRequestSet, Result};
 use quote::{format_ident, quote};
 use std::collections::HashMap;
 
@@ -29,13 +29,45 @@ fn resolve_type(type_name: &str) -> TokenStream {
 /// Options for the generator.
 pub struct GeneratorOptions {
     pub source_relative: bool,
+    pub extern_paths: HashMap<String, String>,
 }
 
 /// Resolves a relative Rust path for a type based on the current package.
 fn resolve_relative_type(
     type_name: &str,
     current_package: &str,
+    options: &GeneratorOptions,
 ) -> TokenStream {
+    let source_relative = options.source_relative;
+
+    // Check extern paths first
+    if let Some(extern_path) = options.extern_paths.iter()
+        .find(|(proto_path, _)| type_name == *proto_path || type_name.starts_with(&format!("{}.", proto_path)))
+    {
+        let (proto_prefix, rust_prefix) = extern_path;
+        // Replace the prefix
+        // e.g. type_name = ".google.protobuf.Timestamp"
+        // extern_path = ".google.protobuf" -> "::pbjson_types"
+        // result = "::pbjson_types::Timestamp"
+
+        // Handle exact match
+        if type_name == *proto_prefix || type_name.trim_start_matches('.') == proto_prefix.trim_start_matches('.') {
+             return resolve_type(rust_prefix);
+        }
+
+        // Handle prefix match
+        // Clean leading dots for reliable comparison logic, though inputs usually have them.
+        let clean_type = type_name.trim_start_matches('.');
+        let clean_proto = proto_prefix.trim_start_matches('.');
+
+        if clean_type.starts_with(clean_proto) {
+             let suffix = &clean_type[clean_proto.len()..]; // e.g. ".Timestamp" or just "Timestamp" if separator is handled
+             // If suffix starts with '.', replace with '::' and append to rust_prefix
+             let resolved = format!("{}{}", rust_prefix, suffix.replace('.', "::"));
+             return resolve_type(&resolved);
+        }
+    }
+
     if !type_name.starts_with('.') {
         // Primitive or already resolved
         return resolve_type(type_name);
@@ -162,24 +194,18 @@ pub fn generate_service(service: &ServiceDefinition, options: &GeneratorOptions)
     let methods: Vec<TokenStream> = service.methods.iter().map(|method| {
         let method_name = safe_ident(&method.name.to_snake_case());
 
-        let input_type = if options.source_relative {
-            resolve_relative_type(
-                &method.input_type,
-                &service.package,
-            )
-        } else {
-            resolve_type(&method.input_type)
-        };
+        let input_type = resolve_relative_type(
+            &method.input_type,
+            &service.package,
+            options,
+        );
 
         #[allow(unused_variables)]
-        let output_type = if options.source_relative {
-            resolve_relative_type(
-                &method.output_type,
-                &service.package,
-            )
-        } else {
-            resolve_type(&method.output_type)
-        };
+        let output_type = resolve_relative_type(
+            &method.output_type,
+            &service.package,
+            options,
+        );
 
         let method_docs = if method.docs.is_empty() {
             let footer = format!(
@@ -247,14 +273,11 @@ pub fn generate_service(service: &ServiceDefinition, options: &GeneratorOptions)
     let mut registration_logic: Vec<TokenStream> = Vec::new();
     for method in &service.methods {
         let method_name = format_ident!("{}", method.name.to_snake_case());
-        let input_type = if options.source_relative {
-            resolve_relative_type(
-                &method.input_type,
-                &service.package,
-            )
-        } else {
-            resolve_type(&method.input_type)
-        };
+        let input_type = resolve_relative_type(
+            &method.input_type,
+            &service.package,
+            options,
+        );
 
         for binding in &method.bindings {
             let http_method_ident = format_ident!("{}", binding.http_method);
@@ -415,6 +438,7 @@ pub fn generate_service(service: &ServiceDefinition, options: &GeneratorOptions)
 pub struct GrpcGatewayGenerator {
     pub no_include: bool,
     pub source_relative: bool,
+    pub extern_paths: HashMap<String, String>,
     pub file_map: HashMap<String, gateway_annotations::google::protobuf_custom::FileDescriptorProto>,
 }
 
@@ -424,10 +448,12 @@ impl GrpcGatewayGenerator {
             String,
             gateway_annotations::google::protobuf_custom::FileDescriptorProto,
         >,
+        extern_paths: HashMap<String, String>,
     ) -> Self {
         Self {
             no_include: false,
             source_relative: true,
+            extern_paths,
             file_map,
         }
     }
@@ -437,6 +463,7 @@ impl Generator for GrpcGatewayGenerator {
     fn generate(&mut self, module_request_set: &ModuleRequestSet) -> Result {
         let options = GeneratorOptions {
             source_relative: self.source_relative,
+            extern_paths: self.extern_paths.clone(),
         };
 
         // Initialize symbol registry from input files using the rich descriptors
@@ -445,7 +472,7 @@ impl Generator for GrpcGatewayGenerator {
 
         module_request_set
             .requests()
-            .filter_map(|(_module, request)| {
+            .filter_map(|(module, request)| {
                 let output_filename = format!("{}.gw.rs", request.proto_package_name());
 
                 // Aggregate all files in this request (which maps to one package)
@@ -529,5 +556,73 @@ impl Generator for GrpcGatewayGenerator {
             .flatten()
             .map(Ok)
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_resolve_relative_type_extern_path_exact() {
+        let mut extern_paths = HashMap::new();
+        extern_paths.insert(".google.protobuf.Timestamp".to_string(), "::pbjson_types::Timestamp".to_string());
+
+        let options = GeneratorOptions {
+            source_relative: true,
+            extern_paths,
+        };
+
+        let stream = resolve_relative_type(".google.protobuf.Timestamp", "my.pkg", &options);
+        assert_eq!(stream.to_string(), ":: pbjson_types :: Timestamp");
+    }
+
+    #[test]
+    fn test_resolve_relative_type_extern_path_prefix() {
+        let mut extern_paths = HashMap::new();
+        extern_paths.insert(".google.protobuf".to_string(), "::pbjson_types".to_string());
+
+        let options = GeneratorOptions {
+            source_relative: true,
+            extern_paths,
+        };
+
+        let stream = resolve_relative_type(".google.protobuf.Timestamp", "my.pkg", &options);
+        assert_eq!(stream.to_string(), ":: pbjson_types :: Timestamp");
+    }
+
+    #[test]
+    fn test_resolve_relative_type_extern_path_prefix_nested() {
+        let mut extern_paths = HashMap::new();
+        extern_paths.insert(".my.common".to_string(), "::common_crate".to_string());
+
+        let options = GeneratorOptions {
+            source_relative: true,
+            extern_paths,
+        };
+
+        let stream = resolve_relative_type(".my.common.Status", "my.pkg", &options);
+        assert_eq!(stream.to_string(), ":: common_crate :: Status");
+    }
+
+    #[test]
+    fn test_resolve_relative_type_no_match() {
+        let options = GeneratorOptions {
+            source_relative: true,
+            extern_paths: HashMap::new(),
+        };
+
+        // Current package "my.pkg", target ".my.pkg.Foo" -> "Foo" (if source relative and same package)
+        // resolve_relative_type logic for same package:
+        // current_parts: ["my", "pkg"]
+        // type_parts: ["my", "pkg", "Foo"]
+        // common: 2
+        // super_count: 2 - 2 + 1 = 1 (super::)
+        // remaining type: Foo
+        // Result: super::Foo
+
+        let stream = resolve_relative_type(".my.pkg.Foo", "my.pkg", &options);
+        assert_eq!(stream.to_string(), "super :: Foo");
     }
 }

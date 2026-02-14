@@ -106,7 +106,7 @@ fn test_documentation_generation() {
 
     // Generate code
     let options = generator::GeneratorOptions {
-        source_relative: false,
+        source_relative: false, extern_paths: std::collections::HashMap::new(),
     };
     let tokens = generator::generate_service(svc_def, &options);
     let output = tokens.to_string();
@@ -167,7 +167,7 @@ fn test_missing_documentation_fallback() {
 
     // Generate code and check for footer
     let options = generator::GeneratorOptions {
-        source_relative: false,
+        source_relative: false, extern_paths: std::collections::HashMap::new(),
     };
     let tokens = generator::generate_service(svc_def, &options);
     let output = tokens.to_string();

@@ -21,6 +21,12 @@ pub struct ShutdownSignal {
     inner: Pin<Box<dyn Future<Output = ()> + Send + Sync>>,
 }
 
+impl Default for ShutdownSignal {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ShutdownSignal {
     /// Creates a new shutdown signal listener.
     pub fn new() -> Self {

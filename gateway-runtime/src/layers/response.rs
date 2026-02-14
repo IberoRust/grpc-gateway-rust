@@ -8,13 +8,20 @@
 //! post-processing logging.
 
 use crate::alloc::boxed::Box;
+use crate::alloc::sync::Arc;
 use crate::alloc::vec::Vec;
-use crate::gateway::ResponseModifier;
 use crate::{GatewayRequest, GatewayResponse};
 use core::task::{Context, Poll};
 use std::future::Future;
 use std::pin::Pin;
 use tower::Service;
+
+/// A handler for modifying HTTP responses before they are sent.
+///
+/// Functions of this type are invoked after the inner service returns a successful response.
+/// They receive a read-only view of the original request (headers/metadata) and a mutable
+/// reference to the response, allowing for header injection or status modification.
+pub type ResponseModifier = Arc<dyn Fn(&GatewayRequest, &mut GatewayResponse) + Send + Sync>;
 
 /// A Tower middleware that applies response modifiers.
 #[derive(Clone)]
@@ -76,5 +83,79 @@ where
 
             Ok(resp)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::GatewayError;
+    use http::StatusCode;
+    use http_body_util::BodyExt;
+    use http_body_util::Full;
+
+    #[tokio::test]
+    async fn test_response_layer_modifies() {
+        let modifier: ResponseModifier = Arc::new(|_, resp| {
+            resp.headers_mut().insert("x-modified", "true".parse().unwrap());
+        });
+
+        let service = tower::service_fn(|_req: GatewayRequest| async {
+            Ok::<GatewayResponse, GatewayError>(http::Response::new(
+                BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))
+            ))
+        });
+
+        let mut layer = ResponseLayer::new(service, vec![modifier]);
+        let req = http::Request::builder().body(crate::alloc::vec::Vec::new()).unwrap();
+
+        let resp = layer.call(req).await.unwrap();
+        assert_eq!(resp.headers().get("x-modified").unwrap(), "true");
+    }
+
+    #[tokio::test]
+    async fn test_response_layer_multiple_modifiers() {
+        let m1: ResponseModifier = Arc::new(|_, resp| {
+            resp.headers_mut().insert("h1", "v1".parse().unwrap());
+        });
+        let m2: ResponseModifier = Arc::new(|_, resp| {
+            resp.headers_mut().insert("h2", "v2".parse().unwrap());
+        });
+
+        let service = tower::service_fn(|_req: GatewayRequest| async {
+            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))))
+        });
+
+        let mut layer = ResponseLayer::new(service, vec![m1, m2]);
+        let req = http::Request::builder().body(crate::alloc::vec::Vec::new()).unwrap();
+
+        let resp = layer.call(req).await.unwrap();
+        assert_eq!(resp.headers().get("h1").unwrap(), "v1");
+        assert_eq!(resp.headers().get("h2").unwrap(), "v2");
+    }
+
+    #[tokio::test]
+    async fn test_response_layer_access_request_context() {
+        let modifier: ResponseModifier = Arc::new(|req, resp| {
+            if req.headers().contains_key("x-trigger") {
+                *resp.status_mut() = StatusCode::ACCEPTED;
+            }
+        });
+
+        let service = tower::service_fn(|_req: GatewayRequest| async {
+            Ok::<GatewayResponse, GatewayError>(http::Response::new(BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::new()).map_err(|_| unreachable!()))))
+        });
+
+        let mut layer = ResponseLayer::new(service, vec![modifier]);
+
+        // Request with trigger
+        let req = http::Request::builder().header("x-trigger", "1").body(crate::alloc::vec::Vec::new()).unwrap();
+        let resp = layer.call(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+
+        // Request without trigger
+        let req = http::Request::builder().body(crate::alloc::vec::Vec::new()).unwrap();
+        let resp = layer.call(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 }

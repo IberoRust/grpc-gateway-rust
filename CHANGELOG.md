@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-02-13
+
+### Added
+- **Runtime:** Introduced a robust **Governance Layer** with configurable global concurrency limits, request timeouts, rate limiting (token bucket), and automatic load shedding.
+- **Runtime:** Added **Health Check Module** (`HealthService`) supporting standard gRPC health checks (`grpc.health.v1`) and HTTP Liveness/Readiness probes (`/healthz`, `/readyz`).
+- **Runtime:** Added `BodyLimitLayer` to enforce strict size limits on request and response bodies.
+- **Runtime:** Added `GatewayRetryPolicy` to handle transient failures (e.g., 503, upstream errors) with configurable retry attempts.
+- **Runtime:** Integrated `tower` and `tower-http` ecosystem for robust middleware support (Compression, CORS, Tracing).
+- **Runtime:** Added adapters (`VecBody`, `VecBodyToVecService`) to bridge the internal `Vec<u8>` request model with standard `http_body::Body` middleware.
+- **Codegen:** Added support for `extern_path` parameter (e.g., `extern_path=.google.protobuf=::pbjson_types`), allowing substitution of Protobuf types with custom Rust types or external crate types.
+
+### Changed
+- **Breaking:** Refactored `gateway-runtime` module structure. Middleware layers and types are now organized under the `layers` module (`layers::governance`, `layers::health`, `layers::tracing`, etc.).
+- **Breaking:** `Gateway::into_service` now constructs a fully governed `tower::Service` stack, including buffering and error mapping.
+- **Breaking:** Deprecated `with_metrics_recorder` and `with_tracing` in favor of standard `tower-http` TraceLayer integration.
+- **Documentation:** Comprehensive cleanup of documentation to be professional and suitable for public release.
+
 ## [0.2.1] - 2025-02-12
 
 ### Changed

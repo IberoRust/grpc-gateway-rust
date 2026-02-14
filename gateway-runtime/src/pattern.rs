@@ -62,7 +62,7 @@ pub fn route_matcher(pattern: &Pattern, path: &str) -> Option<BTreeMap<String, S
         components[last_idx] = head;
     }
 
-    let mut stack: Vec<String> = Vec::with_capacity(pattern.stack_size as usize);
+    let mut stack: Vec<String> = Vec::with_capacity(pattern.stack_size);
     let mut captured: BTreeMap<String, String> = BTreeMap::new();
     let mut pos = 0;
 
@@ -87,10 +87,10 @@ pub fn route_matcher(pattern: &Pattern, path: &str) -> Option<BTreeMap<String, S
                 pos += 1;
             }
             OpCode::PushM => {
-                if components.len() < pos + pattern.tail_len as usize {
+                if components.len() < pos + pattern.tail_len {
                     return None;
                 }
-                let end = components.len() - pattern.tail_len as usize;
+                let end = components.len() - pattern.tail_len;
                 let c = components[pos..end].join("/");
                 stack.push(c);
                 pos = end;

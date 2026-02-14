@@ -23,7 +23,7 @@ fn test_generation_output() {
     };
 
     let options = generator::GeneratorOptions {
-        source_relative: false,
+        source_relative: false, extern_paths: std::collections::HashMap::new(),
     };
     let tokens = generator::generate_service(&service, &options);
     let wrapped = quote! { #tokens };
@@ -53,7 +53,7 @@ fn test_generation_source_relative() {
     };
 
     let options = generator::GeneratorOptions {
-        source_relative: true,
+        source_relative: true, extern_paths: std::collections::HashMap::new(),
     };
     let tokens = generator::generate_service(&service, &options);
     let output = tokens.to_string();

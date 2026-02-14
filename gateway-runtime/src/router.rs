@@ -21,7 +21,9 @@
 //! The router is typically populated by generated code calling `route` or `route_with_metadata`.
 //! At runtime, it is wrapped by the `Gateway` service.
 
+use crate::alloc::sync::Arc;
 use crate::pattern::route_matcher;
+use crate::{GatewayError, GatewayRequest};
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -59,6 +61,13 @@ pub enum AuthLocation {
     /// Credential is in a cookie.
     Cookie,
 }
+
+/// A handler for verifying authentication requirements.
+///
+/// Implementations check if the request satisfies the security rules defined in the [RouteMetadata].
+/// If validation fails, it should return a [GatewayError] (typically `Unauthenticated` or `PermissionDenied`).
+pub type AuthVerifier =
+    Arc<dyn Fn(&GatewayRequest, &RouteMetadata) -> Result<(), GatewayError> + Send + Sync>;
 
 /// The request dispatcher.
 ///

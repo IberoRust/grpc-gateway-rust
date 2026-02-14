@@ -15,18 +15,13 @@
 //! ## Middleware Stack
 //! The `Gateway::into_service()` method constructs a `tower::Service` with the following layer order
 //! (outer to inner):
-//! 1.  **Tracing**: Request/Response tracing.
-//! 2.  **Metrics**: Request duration and status recording.
-//! 3.  **Error Handling**: Catches errors from inner layers and converts them to HTTP responses.
-//! 4.  **Response Modifiers**: modifying the response before sending it back.
-//! 5.  **Headers**: Filtering/Transforming incoming and outgoing headers.
-//! 6.  **Metadata**: Extracting and injecting metadata (e.g., from headers or annotators).
+//! 1.  **Response Boxing & Compression**: Ensures uniform response type.
+//! 2.  **Governance**: Concurrency limits and Timeouts.
+//! 3.  **Tower HTTP**: CORS, Tracing (requires `Body` trait).
+//! 4.  **Adapters**: Bridges `Vec<u8>` and `http_body::Body`.
+//! 5.  **Governance Body Limit**: Enforces size limits on `Vec<u8>`.
+//! 6.  **Internal Layers**: Metrics, Tracing, Error Handling, etc.
 //! 7.  **RouterService**: The core logic (Path matching -> Auth -> Dispatch).
-//!
-//! ## Position in the Architecture
-//! The `Gateway` is the glue that binds the `Router` (generated code registry) with the
-//! runtime features (handlers, defaults). The resulting service is typically passed to
-//! an HTTP server (like `hyper`).
 
 use crate::alloc::boxed::Box;
 use crate::alloc::string::String;
@@ -34,10 +29,18 @@ use crate::alloc::sync::Arc;
 use crate::alloc::vec::Vec;
 use crate::defaults;
 use crate::layers::{
-    error::ErrorLayer, headers::HeaderLayer, metadata::MetadataLayer, response::ResponseLayer,
+    body::{box_response_body, VecBody, VecBodyToVecService},
+    error::{ErrorHandler, ErrorLayer},
+    governance::{BodyLimitLayer, GatewayRetryPolicy, GovernanceConfig},
+    headers::{HeaderLayer, HeaderMatcher},
+    health::{HealthCheckConfig, HealthService},
+    metadata::{MetadataAnnotator, MetadataLayer},
+    metrics::{MetricsLayer, MetricsRecorder},
+    response::{ResponseLayer, ResponseModifier},
+    tracing::{TraceLayer, TracingEndHandler, TracingStartHandler},
 };
 use crate::metadata::MetadataForwardingConfig;
-use crate::router::{RouteMetadata, Router};
+use crate::router::{AuthVerifier, RouteMetadata, Router};
 use crate::{GatewayError, GatewayRequest, GatewayResponse, GatewayResult};
 use core::task::{Context, Poll};
 use core::time::Duration;
@@ -46,33 +49,10 @@ use std::future::Future;
 use std::pin::Pin;
 use tonic::metadata::MetadataMap;
 use tower::{Service, ServiceBuilder};
-
-/// A handler for converting errors into HTTP responses.
-pub type ErrorHandler = Arc<dyn Fn(&GatewayRequest, GatewayError) -> GatewayResponse + Send + Sync>;
-
-/// A handler for annotating requests with metadata.
-pub type MetadataAnnotator = Arc<dyn Fn(&GatewayRequest) -> MetadataMap + Send + Sync>;
-
-/// A handler for modifying HTTP responses before they are sent.
-pub type ResponseModifier = Arc<dyn Fn(&GatewayRequest, &mut GatewayResponse) + Send + Sync>;
-
-/// A handler for matching and transforming headers.
-pub type HeaderMatcher = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
-
-/// A handler for verifying authentication requirements.
-pub type AuthVerifier =
-    Arc<dyn Fn(&GatewayRequest, &RouteMetadata) -> Result<(), GatewayError> + Send + Sync>;
-
-/// A handler for recording metrics.
-pub type MetricsRecorder = Arc<dyn Fn(&GatewayRequest, &GatewayResult, Duration) + Send + Sync>;
-
-/// A handler for tracing start. Returns an opaque token (TraceContext) to be passed to end.
-pub type TracingStartHandler =
-    Arc<dyn Fn(&GatewayRequest) -> Box<dyn core::any::Any + Send> + Send + Sync>;
-
-/// A handler for tracing end.
-pub type TracingEndHandler =
-    Arc<dyn Fn(Box<dyn core::any::Any + Send>, &GatewayResult) + Send + Sync>;
+use tower::util::{MapErrLayer, MapRequestLayer, MapResponseLayer};
+use tower_http::compression::CompressionLayer;
+use tower_http::cors::CorsLayer;
+use tower_http::trace::TraceLayer as HttpTraceLayer;
 
 /// Configuration for unescaping path parameters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,6 +72,19 @@ struct RouterService<S> {
     router: Router<S>,
     auth_verifier: Option<AuthVerifier>,
     unescaping_mode: UnescapingMode,
+}
+
+// Helper to map GatewayError to BoxError in a Clone-safe way (function pointer)
+fn gateway_error_to_box_error(e: GatewayError) -> Box<dyn std::error::Error + Send + Sync> {
+    Box::new(e) as Box<dyn std::error::Error + Send + Sync>
+}
+
+// Helper to lift GatewayError to BoxError (inverse mapping for Buffer)
+fn box_error_to_gateway_error(e: Box<dyn std::error::Error + Send + Sync>) -> GatewayError {
+    GatewayError::Custom(
+        http::StatusCode::INTERNAL_SERVER_ERROR,
+        format!("Governance error: {}", e),
+    )
 }
 
 impl<S> Service<GatewayRequest> for RouterService<S>
@@ -150,100 +143,6 @@ where
     }
 }
 
-/// A generic layer for recording metrics around the inner service execution.
-#[derive(Clone)]
-struct MetricsLayer<S> {
-    inner: S,
-    recorder: Option<MetricsRecorder>,
-}
-
-impl<S> Service<GatewayRequest> for MetricsLayer<S>
-where
-    S: Service<GatewayRequest, Response = GatewayResponse, Error = GatewayError>,
-    S::Future: Send + 'static,
-{
-    type Response = GatewayResponse;
-    type Error = GatewayError;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: GatewayRequest) -> Self::Future {
-        let recorder = self.recorder.clone();
-
-        // Capture request metadata for the recorder callback
-        let method = req.method().clone();
-        let uri = req.uri().clone();
-        let headers = req.headers().clone();
-
-        let start_time = std::time::Instant::now();
-        let fut = self.inner.call(req);
-
-        Box::pin(async move {
-            let res = fut.await;
-            let duration = start_time.elapsed();
-
-            if let Some(rec) = recorder {
-                // Reconstruct a partial request for context in the recorder
-                let mut partial_req = http::Request::builder()
-                    .method(method)
-                    .uri(uri)
-                    .body(Vec::new())
-                    .unwrap();
-                *partial_req.headers_mut() = headers;
-
-                rec(&partial_req, &res, duration);
-            }
-            res
-        })
-    }
-}
-
-/// A generic layer for wrapping execution with tracing start/end hooks.
-#[derive(Clone)]
-struct TraceLayer<S> {
-    inner: S,
-    start: Option<TracingStartHandler>,
-    end: Option<TracingEndHandler>,
-}
-
-impl<S> Service<GatewayRequest> for TraceLayer<S>
-where
-    S: Service<GatewayRequest, Response = GatewayResponse, Error = GatewayError>,
-    S::Future: Send + 'static,
-{
-    type Response = GatewayResponse;
-    type Error = GatewayError;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: GatewayRequest) -> Self::Future {
-        let token = if let Some(start) = &self.start {
-            Some(start(&req))
-        } else {
-            None
-        };
-
-        let end = self.end.clone();
-        let fut = self.inner.call(req);
-
-        Box::pin(async move {
-            let res = fut.await;
-            if let Some(end_handler) = end {
-                if let Some(t) = token {
-                    end_handler(t, &res);
-                }
-            }
-            res
-        })
-    }
-}
-
 /// A builder and configuration struct for the Gateway runtime.
 ///
 /// Wraps a `Router` and allows attaching various handlers and configuration options.
@@ -261,6 +160,11 @@ pub struct Gateway<S> {
     metrics_recorder: Option<MetricsRecorder>,
     tracing_start: Option<TracingStartHandler>,
     tracing_end: Option<TracingEndHandler>,
+
+    cors_layer: Option<CorsLayer>,
+    compression_layer: Option<CompressionLayer>,
+    governance_config: GovernanceConfig,
+    health_check_config: Option<HealthCheckConfig>,
 
     metadata_config: MetadataForwardingConfig,
 }
@@ -280,6 +184,10 @@ impl<S> Gateway<S> {
             metrics_recorder: None,
             tracing_start: None,
             tracing_end: None,
+            cors_layer: None,
+            compression_layer: None,
+            governance_config: GovernanceConfig::default(),
+            health_check_config: None,
             metadata_config: MetadataForwardingConfig::default(),
         }
     }
@@ -345,6 +253,7 @@ impl<S> Gateway<S> {
     }
 
     /// Sets the metrics recorder.
+    #[deprecated(note = "Use tower-http TraceLayer or metrics crate instead.")]
     pub fn with_metrics_recorder<F>(mut self, recorder: F) -> Self
     where
         F: Fn(&GatewayRequest, &GatewayResult, Duration) + Send + Sync + 'static,
@@ -353,7 +262,20 @@ impl<S> Gateway<S> {
         self
     }
 
+    /// Sets the CORS layer.
+    pub fn with_cors(mut self, layer: CorsLayer) -> Self {
+        self.cors_layer = Some(layer);
+        self
+    }
+
+    /// Sets the compression layer.
+    pub fn with_compression(mut self, layer: CompressionLayer) -> Self {
+        self.compression_layer = Some(layer);
+        self
+    }
+
     /// Sets tracing handlers.
+    #[deprecated(note = "Use tower-http tracing via `tracing` crate instead.")]
     pub fn with_tracing<Start, End>(mut self, start: Start, end: End) -> Self
     where
         Start: Fn(&GatewayRequest) -> Box<dyn core::any::Any + Send> + Send + Sync + 'static,
@@ -361,6 +283,18 @@ impl<S> Gateway<S> {
     {
         self.tracing_start = Some(Arc::new(start));
         self.tracing_end = Some(Arc::new(end));
+        self
+    }
+
+    /// Sets the governance configuration (limits, timeouts).
+    pub fn with_governance(mut self, config: GovernanceConfig) -> Self {
+        self.governance_config = config;
+        self
+    }
+
+    /// Sets the health check configuration.
+    pub fn with_health_check(mut self, config: HealthCheckConfig) -> Self {
+        self.health_check_config = Some(config);
         self
     }
 
@@ -396,7 +330,13 @@ where
             unescaping_mode: self.unescaping_mode,
         };
 
-        let service = ServiceBuilder::new()
+        // 1. Build the inner-most stack (Previous Generation Layers + BodyLimit + Retry)
+        // These layers operate on `GatewayRequest` (i.e., `Request<Vec<u8>>`).
+        // Retry must happen here because it needs to clone the request (which is cheap-ish for Vec<u8> vs streams).
+        let inner_service = ServiceBuilder::new()
+            .option_layer(self.governance_config.retry_count.map(|count| {
+                tower::retry::RetryLayer::new(GatewayRetryPolicy::new(count))
+            }))
             .layer_fn(|inner| TraceLayer {
                 inner,
                 start: self.tracing_start.clone(),
@@ -422,13 +362,112 @@ where
                     self.metadata_config.clone(),
                 )
             })
+            // Manually constructed layers must be added via layer_fn or wrapper struct if they implement Service directly
+            .layer_fn(|inner| BodyLimitLayer::new(
+                inner,
+                self.governance_config.max_request_body_size,
+                self.governance_config.max_response_body_size,
+            ))
             .service(router_service);
 
-        tower::util::BoxCloneService::new(service)
+        // 2. Build the middle stack (Governance + Adapters + TowerHTTP)
+
+        // This stack handles error normalization, timeouts, concurrency, and protocol adapters.
+        // We use `Buffer` to ensure the service is `Clone` and handle backpressure,
+        // which solves the `Either` Clone issues with RateLimit/LoadShed.
+
+        let governed_stack = ServiceBuilder::new()
+            // Map BoxError (from Governance) back to GatewayError
+            .layer(MapErrLayer::new(box_error_to_gateway_error))
+
+            // Buffer the governance stack. This returns a service that produces BoxError.
+            .layer(tower::buffer::BufferLayer::new(1024))
+
+            // Governance Layers (LoadShed / RateLimit / Timeout / Concurrency) - Return BoxError
+            // Order: LoadShed (fastest) -> RateLimit -> Concurrency -> Timeout
+            .option_layer(if self.governance_config.enable_load_shedding {
+                Some(tower::load_shed::LoadShedLayer::new())
+            } else {
+                None
+            })
+            .option_layer(self.governance_config.rate_limit_per_second.map(|rps| {
+                tower::limit::RateLimitLayer::new(
+                    rps,
+                    core::time::Duration::from_secs(1)
+                )
+            }))
+            .option_layer(self.governance_config.connection_limit.map(tower::limit::GlobalConcurrencyLimitLayer::new))
+            .option_layer(self.governance_config.request_timeout.map(tower::timeout::TimeoutLayer::new))
+
+            // Map GatewayError to BoxError (Required for Governance layers that expect standard Error trait)
+            // Note: We use a function pointer to ensure the layer is Clone.
+            .layer(MapErrLayer::new(gateway_error_to_box_error))
+
+            // Adapt Request<Vec<u8>> -> Request<VecBody> for TowerHTTP
+            .layer(MapRequestLayer::new(|req: GatewayRequest| {
+                req.map(|v| VecBody(Some(v)))
+            }))
+
+            // Tower HTTP Layers
+            .layer(HttpTraceLayer::new_for_http())
+            .option_layer(self.cors_layer)
+
+            // Adapt Request<VecBody> -> Request<Vec<u8>> for Inner Service
+            .layer_fn(VecBodyToVecService::new)
+            .service(inner_service);
+
+        // 3. Health Check Layer (Outer Stack)
+        // Wraps everything to ensure health checks work even if inner services are busy/limited.
+
+        // We handle type unification by first boxing the response body, then applying health, then compression, then boxing response again if needed.
+        // Actually, simple solution:
+        // governed_stack returns Result<Response<UnsyncBoxBody>, GatewayError>.
+        // Wait, governed_stack uses MapErr(gateway_error_to_box_error) -> VecBodyToVecService.
+        // VecBodyToVecService returns Response<UnsyncBoxBody>.
+        // BUT inner_service is wrapped with VecBodyToVecService.
+        // The return type of `inner_service` (RouterService) is GatewayResponse (Response<UnsyncBoxBody>).
+        // HttpTraceLayer wraps body in ResponseBody.
+        // So `governed_stack` returns `Response<ResponseBody<...>>`.
+
+        // We must normalize the response body BEFORE HealthService if HealthService returns GatewayResponse.
+        // HealthService returns GatewayResponse (Response<UnsyncBoxBody>).
+        // If it wraps `governed_stack`, then `governed_stack` must return GatewayResponse.
+        // So we need MapResponse(box_response_body) inside the Health branch, or before it.
+
+        let normalized_stack = ServiceBuilder::new()
+            .layer(MapResponseLayer::new(box_response_body))
+            .service(governed_stack);
+
+        // normalized_stack returns GatewayResponse.
+
+        let service_with_health = if let Some(config) = self.health_check_config {
+            let (reporter, _) = tonic_health::server::health_reporter();
+            let health_layer = tower::layer::layer_fn(move |inner| {
+                 HealthService::new(inner, reporter.clone(), config.clone())
+            });
+
+            let svc = ServiceBuilder::new()
+                .layer(health_layer)
+                .service(normalized_stack);
+            tower::util::BoxCloneService::new(svc)
+        } else {
+            tower::util::BoxCloneService::new(normalized_stack)
+        };
+
+        if let Some(compression) = self.compression_layer {
+            let service = ServiceBuilder::new()
+                .layer(MapResponseLayer::new(box_response_body)) // Box again after compression
+                .layer(compression)
+                .service(service_with_health);
+            tower::util::BoxCloneService::new(service)
+        } else {
+            service_with_health
+        }
     }
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use crate::alloc::string::ToString;
@@ -439,6 +478,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use tower::util::BoxCloneService;
+    use tower::ServiceExt;
 
     fn test_pattern() -> Pattern {
         Pattern {
@@ -494,13 +534,13 @@ mod tests {
             assert!(dur.as_nanos() > 0);
         });
 
-        let mut service = gateway.into_service();
+        let service = gateway.into_service();
         let req = http::Request::builder()
             .method("GET")
             .uri("/test")
             .body(Vec::new())
             .unwrap();
-        let _ = service.call(req).await;
+        let _ = service.oneshot(req).await;
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
@@ -523,13 +563,13 @@ mod tests {
             },
         );
 
-        let mut service = gateway.into_service();
+        let service = gateway.into_service();
         let req = http::Request::builder()
             .method("GET")
             .uri("/test")
             .body(Vec::new())
             .unwrap();
-        let _ = service.call(req).await;
+        let _ = service.oneshot(req).await;
         assert_eq!(trace_val.load(Ordering::SeqCst), 2);
     }
 
@@ -571,14 +611,14 @@ mod tests {
             )))
         });
 
-        let mut service = gateway.into_service();
+        let service = gateway.into_service();
         let req = http::Request::builder()
             .method("GET")
             .uri("/test")
             .header("X-Key", "secret")
             .body(Vec::new())
             .unwrap();
-        let resp = service.call(req).await.unwrap();
+        let resp = service.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
@@ -624,13 +664,52 @@ mod tests {
                     .unwrap()
             });
 
-        let mut service = gateway.into_service();
+        let service = gateway.into_service();
         let req = http::Request::builder()
             .method("GET")
             .uri("/test")
             .body(Vec::new())
             .unwrap();
-        let resp = service.call(req).await.unwrap();
+        let resp = service.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_gateway_cors() {
+        let router = make_router();
+        let cors =
+            CorsLayer::new().allow_origin("http://example.com".parse::<http::HeaderValue>().unwrap());
+        let gateway = Gateway::new(router).with_cors(cors);
+
+        let service = gateway.into_service();
+        let req = http::Request::builder()
+            .method("OPTIONS")
+            .uri("/test")
+            .header("Origin", "http://example.com")
+            .header("Access-Control-Request-Method", "GET")
+            .body(Vec::new())
+            .unwrap();
+
+        let resp = service.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers().get("access-control-allow-origin").unwrap(),
+            "http://example.com"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_gateway_tracing_tower() {
+        let router = make_router();
+        // Just verify it doesn't crash. We can't easily assert logs here without capturing subscriber.
+        let gateway = Gateway::new(router); // HttpTraceLayer is default
+        let service = gateway.into_service();
+        let req = http::Request::builder()
+            .method("GET")
+            .uri("/test")
+            .body(Vec::new())
+            .unwrap();
+        let resp = service.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 }

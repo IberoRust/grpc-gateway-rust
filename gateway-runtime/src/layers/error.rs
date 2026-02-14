@@ -7,12 +7,18 @@
 //! raw server errors or dropped connections.
 
 use crate::alloc::boxed::Box;
-use crate::gateway::ErrorHandler;
+use crate::alloc::sync::Arc;
 use crate::{GatewayError, GatewayRequest, GatewayResponse};
 use core::task::{Context, Poll};
 use std::future::Future;
 use std::pin::Pin;
 use tower::Service;
+
+/// A handler for converting errors into HTTP responses.
+///
+/// Implementations of this function type are responsible for mapping domain-specific
+/// [GatewayError]s into user-facing [GatewayResponse]s (e.g., setting status codes, JSON bodies).
+pub type ErrorHandler = Arc<dyn Fn(&GatewayRequest, GatewayError) -> GatewayResponse + Send + Sync>;
 
 /// A Tower middleware that handles errors from the inner service.
 #[derive(Clone)]
@@ -79,5 +85,66 @@ where
                 }
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http::{StatusCode, Response};
+    use http_body_util::{Full, BodyExt};
+    use crate::alloc::string::ToString;
+
+    #[tokio::test]
+    async fn test_error_layer_catches_error() {
+        // Mock service that always fails
+        let service = tower::service_fn(|_req: GatewayRequest| async {
+            Err(GatewayError::NotFound)
+        });
+
+        // Handler that converts error to 404 response
+        let handler: ErrorHandler = Arc::new(|_, err| {
+            Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::from(err.to_string())).map_err(|_| unreachable!())))
+                .unwrap()
+        });
+
+        let mut layer = ErrorLayer::new(service, Some(handler));
+        let req = http::Request::builder().body(crate::alloc::vec::Vec::new()).unwrap();
+
+        let resp = layer.call(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_error_layer_propagates_ok() {
+        // Mock service that succeeds
+        let service = tower::service_fn(|_req: GatewayRequest| async {
+            Ok(Response::new(BodyExt::boxed_unsync(Full::new(crate::bytes::Bytes::from("ok")).map_err(|_| unreachable!()))))
+        });
+
+        let handler: ErrorHandler = Arc::new(|_, _| {
+            panic!("Handler should not be called");
+        });
+
+        let mut layer = ErrorLayer::new(service, Some(handler));
+        let req = http::Request::builder().body(crate::alloc::vec::Vec::new()).unwrap();
+
+        let resp = layer.call(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_error_layer_propagates_error_without_handler() {
+        let service = tower::service_fn(|_req: GatewayRequest| async {
+            Err(GatewayError::MethodNotAllowed)
+        });
+
+        let mut layer = ErrorLayer::new(service, None);
+        let req = http::Request::builder().body(crate::alloc::vec::Vec::new()).unwrap();
+
+        let res = layer.call(req).await;
+        assert!(res.is_err());
     }
 }

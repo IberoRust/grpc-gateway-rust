@@ -159,16 +159,14 @@ where
                         .map(|b| serde_json::Value::Number(serde_json::Number::from(b)))
                         .collect();
                     map.insert(name, serde_json::Value::Array(arr));
+                } else if let Ok(s) = String::from_utf8(data.clone()) {
+                    map.insert(name, serde_json::Value::String(s));
                 } else {
-                    if let Ok(s) = String::from_utf8(data.clone()) {
-                        map.insert(name, serde_json::Value::String(s));
-                    } else {
-                        let arr: alloc::vec::Vec<serde_json::Value> = data
-                            .into_iter()
-                            .map(|b| serde_json::Value::Number(serde_json::Number::from(b)))
-                            .collect();
-                        map.insert(name, serde_json::Value::Array(arr));
-                    }
+                    let arr: alloc::vec::Vec<serde_json::Value> = data
+                        .into_iter()
+                        .map(|b| serde_json::Value::Number(serde_json::Number::from(b)))
+                        .collect();
+                    map.insert(name, serde_json::Value::Array(arr));
                 }
             }
         }

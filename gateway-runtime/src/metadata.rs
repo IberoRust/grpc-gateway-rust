@@ -113,17 +113,9 @@ pub fn forward_metadata<B>(req: &Request<B>, metadata: &mut MetadataMap) {
             continue;
         }
 
-        // 3. Renaming (Optional/Compatibility)
-        // If it's already "grpc-metadata-", it maps directly.
-        // If it's "x-", it maps directly.
-        // We preserve the logic requested previously: "prefix x- unless standard".
-        // But strict security implies we only forward what we TRUST or explicitly allow.
-        // If allowed, we forward as is? Or do we still rename?
-        // grpc-gateway behavior: `Grpc-Metadata-Foo` -> `Foo` in metadata? Or `grpc-metadata-foo`?
-        // Actually, grpc-gateway typically strips `Grpc-Metadata-`.
-        // Rust Tonic doesn't strip automatically.
-        // For this task, we'll keep the previous "x-" prefixing logic for non-standard headers
-        // that pass the filter, to maintain the requested behavior of "identifying from gateway".
+        // 3. Renaming
+        // Automatically prefix non-standard headers with "x-" if not already present.
+        // This helps identify headers that originated from the gateway.
 
         let mut final_key_str = key_str.to_string();
         if !key_str.eq_ignore_ascii_case("authorization")
@@ -141,12 +133,11 @@ pub fn forward_metadata<B>(req: &Request<B>, metadata: &mut MetadataMap) {
                 let val = MetadataValue::from_bytes(value.as_bytes());
                 metadata.insert_bin(key_parsed, val);
             }
-        } else {
-            if let Ok(key_parsed) = MetadataKey::<tonic::metadata::Ascii>::from_str(&final_key_str)
-            {
-                if let Ok(val) = MetadataValue::try_from(value.as_bytes()) {
-                    metadata.insert(key_parsed, val);
-                }
+        } else if let Ok(key_parsed) =
+            MetadataKey::<tonic::metadata::Ascii>::from_str(&final_key_str)
+        {
+            if let Ok(val) = MetadataValue::try_from(value.as_bytes()) {
+                metadata.insert(key_parsed, val);
             }
         }
     }
